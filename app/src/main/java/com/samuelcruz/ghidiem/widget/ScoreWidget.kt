@@ -91,7 +91,16 @@ class ScoreWidget : GlanceAppWidget() {
                     Spacer(GlanceModifier.height(6.dp))
                     Row(GlanceModifier.fillMaxWidth()) {
                         PlusButton(m, 0, red)
-                        Spacer(GlanceModifier.width(8.dp))
+                        Spacer(GlanceModifier.width(6.dp))
+                        // Takes back the last point / goal / card, like "Hoàn tác" in the app.
+                        Box(
+                            GlanceModifier.width(44.dp).height(36.dp).background(ColorProvider(muted)).cornerRadius(18.dp)
+                                .clickable(actionRunCallback<UndoAction>(actionParametersOf(ScoreAction.match to m.id))),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text("↶", style = TextStyle(color = ColorProvider(Color.White), fontSize = 18.sp, fontWeight = FontWeight.Bold))
+                        }
+                        Spacer(GlanceModifier.width(6.dp))
                         PlusButton(m, 1, blue)
                     }
                 }
@@ -133,6 +142,18 @@ class ScoreAction : ActionCallback {
     companion object {
         val match = ActionParameters.Key<Long>("match")
         val side = ActionParameters.Key<Int>("side")
+    }
+}
+
+/** "↶" on the widget: takes back the last point / goal / card. */
+class UndoAction : ActionCallback {
+    override suspend fun onAction(context: Context, glanceId: GlanceId, parameters: ActionParameters) {
+        val app = context.applicationContext as GhiDiemApp
+        val id = parameters[ScoreAction.match] ?: return
+        val m = app.db.matches().get(id) ?: return
+        if (m.manualEnd) return
+        app.repo.undo(id)
+        ScoreWidget.refresh(context)
     }
 }
 

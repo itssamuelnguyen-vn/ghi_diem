@@ -99,7 +99,11 @@ fun BoardScreen(id: Long, onBack: () -> Unit) {
                 }
             }
             Row(Modifier.weight(1f).fillMaxWidth().padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                ui.order.forEach { side -> Panel(side, ui, Modifier.weight(1f).fillMaxHeight(), huge = true) { tap(side) } }
+                ui.order.forEach { side ->
+                    Panel(side, ui, Modifier.weight(1f).fillMaxHeight(), huge = true, onLongTap = {
+                        scope.launch { app.takeBack(ui.m, side, { haptic.performHapticFeedback(HapticFeedbackType.LongPress) }) { } }
+                    }) { tap(side) }
+                }
             }
             if (ui.board.history.isNotEmpty()) Row(Modifier.fillMaxWidth().padding(top = 10.dp), horizontalArrangement = Arrangement.Center) {
                 ui.board.history.forEach { s ->

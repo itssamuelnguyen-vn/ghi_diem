@@ -179,7 +179,16 @@ fun MatchScreen(
             }
             val panels: @Composable (Modifier) -> Unit = { mod ->
                 Row(mod.padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    ui.order.forEach { side -> Panel(side, ui, Modifier.weight(1f).fillMaxHeight()) { tap(side) } }
+                    ui.order.forEach { side ->
+                        Panel(side, ui, Modifier.weight(1f).fillMaxHeight(), onLongTap = {
+                            uiScope.launch {
+                                app.takeBack(m, side, { haptic.performHapticFeedback(HapticFeedbackType.LongPress) }) {
+                                    snackbar.currentSnackbarData?.dismiss()
+                                    snackbar.showSnackbar(it, duration = SnackbarDuration.Short)
+                                }
+                            }
+                        }) { tap(side) }
+                    }
                 }
             }
             val controls: @Composable () -> Unit = {
@@ -520,8 +529,8 @@ private fun Timeline(ui: MatchUi, modifier: Modifier, onEdit: (EventRow) -> Unit
         }
         if (rows.isEmpty()) item {
             Text(
-                if (sport == Sport.FOOTBALL) "Chưa có bàn thắng. Chạm ô của đội ghi bàn: phút ghi bàn được lưu lại."
-                else "Chưa có điểm nào. Mỗi điểm được lưu kèm thời gian trên đồng hồ.",
+                if (sport == Sport.FOOTBALL) "Chưa có bàn thắng. Chạm ô của đội ghi bàn: phút ghi bàn được lưu lại. Nhấn giữ ô để trừ bàn bấm nhầm."
+                else "Chưa có điểm nào. Mỗi điểm được lưu kèm thời gian trên đồng hồ. Bấm nhầm: nhấn giữ ô điểm để trừ lại.",
                 Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
                 style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

@@ -78,6 +78,9 @@ ui/     Theme (+ Team colours), AppNav, HomeScreen, NewMatchScreen (+ RulesForm,
   of the server's score (even = right), the receiver stands diagonally. Table tennis and tennis use service turns
   (A1, B1, A2, B2): a new turn at each change of server (table tennis), each game and each tie-break change
   (tennis). Tennis receivers keep courts: player 1 right (deuce), player 2 left.
+- **Taking points back**: "Hoàn tác" removes the last undoable event; a long press on a side's panel removes that
+  side's last point / goal (wherever it is, the replay fixes the rest); any event can be deleted from the timeline.
+  None of these work on a match ended by hand (`manualEnd`) until "Chơi tiếp".
 - **Time-outs**: volleyball 2 per set (30 s), table tennis 1 per match (60 s); a countdown banner and a whistle.
 - **Football extras**: own goal (event `side` = the team credited, note = who put it in), substitution (note
   "out → in"), shoot-out (`SHOOTOUT_START` side = first kicker; 5 each then sudden death, decided as soon as one
@@ -99,6 +102,8 @@ tournaments (round-robin, knockout), voice, whistles, volume keys, full-screen b
 Google Drive sync, home-screen widget with +1 buttons.
 Done 0.2.1 (2026-11-15): second review fixes (fixture double tap, stale knockout names, stopped rally matches
 no longer counted as draws, missing-match screen, build script works with redirected output).
+Done 0.2.2 (2026-11-15): long press on a panel takes back that side's last point / goal (`Repo.undoSide`, also in
+the full-screen board); "↶" button on the widget (`UndoAction` = `Repo.undo`).
 
 Done 0.1.0 (2026-11-15): five sports, rules per match, clock, timeline with times, undo / delete / note per event,
 callouts and change-ends alerts, swap sides, rematch, history with filter, share as text.

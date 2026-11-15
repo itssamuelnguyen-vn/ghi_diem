@@ -108,6 +108,20 @@ class Repo(private val dao: MatchDao, private val onChange: () -> Unit = {}) {
         refresh(dao.get(id) ?: return@withLock)
     }
 
+    /**
+     * Takes back the last point (or goal, own goal counted for it) of [side] only, wherever it is in the match:
+     * the long-press on a panel. Returns false when that side has nothing to take back.
+     */
+    suspend fun undoSide(id: Long, side: Int): Boolean = lock.withLock {
+        val m = dao.get(id) ?: return false
+        if (m.manualEnd) return false
+        val kinds = setOf(Kind.POINT, Kind.GOAL, Kind.OWN_GOAL)
+        val last = dao.eventsOnce(id).lastOrNull { it.side == side && it.kind in kinds } ?: return false
+        dao.delete(last)
+        refresh(m)
+        true
+    }
+
     suspend fun deleteEvent(e: EventRow) = lock.withLock {
         dao.delete(e)
         refresh(dao.get(e.matchId) ?: return@withLock)

@@ -7,7 +7,8 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -218,6 +219,14 @@ fun announce(ui: MatchUi, e: EventRow, line: Line): String {
     return listOf(main, tail).filter { it.isNotBlank() }.joinToString(". ")
 }
 
+/** Long press on a panel: removes [side]'s last point / goal, with a buzz; tells when there is nothing to remove. */
+suspend fun GhiDiemApp.takeBack(m: MatchRow, side: Int, haptic: () -> Unit, message: suspend (String) -> Unit) {
+    haptic() // always, so the press is felt even with haptics off for points
+    val ok = kotlinx.coroutines.withContext(scope.coroutineContext) { repo.undoSide(m.id, side) }
+    val what = if (m.sportEnum == Sport.FOOTBALL) "bàn thắng" else "điểm"
+    message(if (ok) "Đã trừ 1 $what của ${m.name(side)}" else "${m.name(side)} chưa có $what nào để trừ")
+}
+
 /** Point / goal for [side]: haptic, write in the app scope, and say why when refused. */
 suspend fun GhiDiemApp.tapScore(m: MatchRow, side: Int, kind: Int, haptic: () -> Unit, message: suspend (String) -> Unit): Boolean {
     if (prefs.haptics) haptic()
@@ -226,9 +235,10 @@ suspend fun GhiDiemApp.tapScore(m: MatchRow, side: Int, kind: Int, haptic: () ->
     return ok
 }
 
-/** Half of the scoreboard: tap anywhere on it to give this side the point (or goal). */
+/** Half of the scoreboard: tap anywhere on it to give this side the point (or goal), long press to take one back. */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun Panel(side: Int, ui: MatchUi, modifier: Modifier, huge: Boolean = false, onTap: () -> Unit) {
+fun Panel(side: Int, ui: MatchUi, modifier: Modifier, huge: Boolean = false, onLongTap: () -> Unit = {}, onTap: () -> Unit) {
     val m = ui.m
     val board = ui.board
     val sport = ui.sport
@@ -239,7 +249,9 @@ fun Panel(side: Int, ui: MatchUi, modifier: Modifier, huge: Boolean = false, onT
         modifier
             .clip(RoundedCornerShape(if (huge) 36.dp else 28.dp))
             .background(Team.brush(side))
-            .clickable(enabled = !done, onClick = onTap),
+            // Tap = point; long press = take back this side's last point (also the winning one of a finished
+            // match; not in a match ended by hand).
+            .combinedClickable(enabled = !ui.m.manualEnd, onClick = { if (!done) onTap() }, onLongClick = onLongTap),
     ) {
         val big: Dp = min(maxWidth * if (huge) 0.7f else 0.62f, maxHeight * if (huge) 0.62f else 0.48f)
         val bigSp = with(LocalDensity.current) { big.toSp() }
