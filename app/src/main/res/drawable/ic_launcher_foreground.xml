@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A scoreboard: two white score panels (red and blue tops) with a colon; art inside the 66dp safe zone. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
+    <path android:fillColor="#FFFFFFFF" android:pathData="M32,38 H50 A3,3 0 0 1 53,41 V70 A3,3 0 0 1 50,73 H32 A3,3 0 0 1 29,70 V41 A3,3 0 0 1 32,38 Z" />
+    <path android:fillColor="#FFFFFFFF" android:pathData="M58,38 H76 A3,3 0 0 1 79,41 V70 A3,3 0 0 1 76,73 H58 A3,3 0 0 1 55,70 V41 A3,3 0 0 1 58,38 Z" />
+    <path android:fillColor="#FFF43F5E" android:pathData="M32,38 H50 A3,3 0 0 1 53,41 V45 H29 V41 A3,3 0 0 1 32,38 Z" />
+    <path android:fillColor="#FF38BDF8" android:pathData="M58,38 H76 A3,3 0 0 1 79,41 V45 H55 V41 A3,3 0 0 1 58,38 Z" />
+    <path android:fillColor="#FF3730A3" android:pathData="M37,50 H45 V68 H37 V64 H41 V61 H38 V57 H41 V54 H37 Z" />
+    <path android:fillColor="#FF3730A3" android:pathData="M65,50 H69 V68 H65 V55 H62 V52 Z" />
+    <path android:fillColor="#FFFACC15" android:pathData="M54,30 m-4,0 a4,4 0 1 0 8,0 a4,4 0 1 0 -8,0 Z" />
+</vector>

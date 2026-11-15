@@ -1,0 +1,72 @@
+package com.samuelcruz.ghidiem.data
+
+import androidx.room.Entity
+import androidx.room.ForeignKey
+import androidx.room.Index
+import androidx.room.PrimaryKey
+import com.samuelcruz.ghidiem.core.Ev
+import com.samuelcruz.ghidiem.core.Rules
+import com.samuelcruz.ghidiem.core.Setup
+import com.samuelcruz.ghidiem.core.Sport
+
+/**
+ * A match. The score is never stored as truth: it is replayed from [EventRow]s ([score]/[detail]/[winner] are a
+ * cache for the history list). The clock is a stopwatch: [clockBaseMs] counted so far, plus the time since
+ * [runningSince] (wall clock, 0 = paused), so it keeps counting while the app is closed.
+ */
+@Entity(tableName = "matches")
+data class MatchRow(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val sport: String,
+    val rules: String,
+    val nameA: String,
+    val nameB: String,
+    val firstServer: Int = 0,
+    val createdAt: Long,
+    /** When the clock was first started (0 = not yet). */
+    val startedAt: Long = 0,
+    /** 0 = still being played. */
+    val finishedAt: Long = 0,
+    val clockBaseMs: Long = 0,
+    val runningSince: Long = 0,
+    /** Show side B on the left (after changing ends). Display only. */
+    val swapped: Boolean = false,
+    val score: String = "0-0",
+    val detail: String = "",
+    val winner: Int = -1,
+    /** Ended by hand ("Kết thúc" / "Dừng trận"), not by the rules: deleting events must not reopen it. */
+    val manualEnd: Boolean = false,
+) {
+    val sportEnum get() = Sport.of(sport)
+    val rulesObj get() = Rules.fromJson(rules)
+    val setup get() = Setup(sportEnum, rulesObj, firstServer)
+    val running get() = runningSince > 0
+    val finished get() = finishedAt > 0
+    fun name(side: Int) = if (side == 0) nameA else nameB
+
+    fun clockAt(now: Long) = clockBaseMs + if (runningSince > 0) (now - runningSince).coerceAtLeast(0) else 0
+    fun startClock(now: Long) = if (running) this else copy(runningSince = now, startedAt = if (startedAt == 0L) now else startedAt)
+    fun stopClock(now: Long) = if (!running) this else copy(clockBaseMs = clockAt(now), runningSince = 0)
+}
+
+@Entity(
+    tableName = "events",
+    foreignKeys = [ForeignKey(MatchRow::class, ["id"], ["matchId"], onDelete = ForeignKey.CASCADE)],
+    indices = [Index("matchId")],
+)
+data class EventRow(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val matchId: Long,
+    /** 0 = A, 1 = B, -1 = period events. */
+    val side: Int,
+    /** A [com.samuelcruz.ghidiem.core.Kind]. */
+    val kind: Int,
+    /** Match clock when it happened. */
+    val clockMs: Long,
+    /** Wall clock when it was recorded. */
+    val at: Long,
+    /** Scorer / player, typed after the fact. */
+    val note: String = "",
+) {
+    fun ev() = Ev(side, kind, clockMs, note)
+}
