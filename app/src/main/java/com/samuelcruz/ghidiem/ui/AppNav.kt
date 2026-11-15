@@ -16,7 +16,7 @@ val Context.app get() = applicationContext as GhiDiemApp
 @Composable
 fun app(): GhiDiemApp = LocalContext.current.app
 
-/** Routes (like routes.rb): home, new/{sport}, match/{id}. */
+/** Routes (like routes.rb): home, new/{sport}, match/{id}, stats/{id}, board/{id}. */
 @Composable
 fun AppNav() {
     val nav = rememberNavController()
@@ -39,7 +39,15 @@ fun AppNav() {
                 id = e.arguments!!.getLong("id"),
                 onBack = { nav.popBackStack() },
                 onOpen = { id -> nav.navigate("match/$id") { popUpTo("home") } },
+                onStats = { nav.navigate("stats/$it") },
+                onBoard = { nav.navigate("board/$it") },
             )
+        }
+        composable("stats/{id}", arguments = listOf(navArgument("id") { type = NavType.LongType })) { e ->
+            StatsScreen(e.arguments!!.getLong("id"), onBack = { nav.popBackStack() })
+        }
+        composable("board/{id}", arguments = listOf(navArgument("id") { type = NavType.LongType })) { e ->
+            BoardScreen(e.arguments!!.getLong("id"), onBack = { nav.popBackStack() })
         }
     }
 }

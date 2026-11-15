@@ -193,7 +193,8 @@ private fun MatchCard(m: MatchRow, onClick: () -> Unit, onLongClick: () -> Unit)
                 NameLine(m, 0)
                 NameLine(m, 1)
                 val sub = buildList {
-                    if (m.detail.isNotEmpty() && m.sportEnum != Sport.FOOTBALL) add(m.detail)
+                    if (m.detail.isNotEmpty()) add(m.detail)
+                    if (m.doubles) add("đôi")
                     if (!m.finished) add("Đang chơi") else {
                         if (m.clockBaseMs > 60_000) add(fmtDuration(m.clockBaseMs))
                     }

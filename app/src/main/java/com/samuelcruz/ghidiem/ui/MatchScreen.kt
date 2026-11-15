@@ -1,13 +1,5 @@
 package com.samuelcruz.ghidiem.ui
 
-import android.content.Context
-import android.content.Intent
-import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutVertically
-import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -17,6 +9,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -38,13 +31,14 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Undo
+import androidx.compose.material.icons.filled.BarChart
+import androidx.compose.material.icons.filled.Fullscreen
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilledTonalButton
@@ -64,11 +58,8 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -78,52 +69,48 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
-import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.min
 import androidx.compose.ui.unit.sp
-import com.samuelcruz.ghidiem.core.Board
-import com.samuelcruz.ghidiem.core.FootballClock
 import com.samuelcruz.ghidiem.core.Kind
-import com.samuelcruz.ghidiem.core.Scoring
+import com.samuelcruz.ghidiem.core.Line
 import com.samuelcruz.ghidiem.core.Sport
-import com.samuelcruz.ghidiem.core.fmtClock
 import com.samuelcruz.ghidiem.core.fmtDuration
 import com.samuelcruz.ghidiem.core.periodName
 import com.samuelcruz.ghidiem.data.EventRow
-import com.samuelcruz.ghidiem.data.MatchRow
 import com.samuelcruz.ghidiem.data.Repo
 import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 
 @Composable
-fun MatchScreen(id: Long, onBack: () -> Unit, onOpen: (Long) -> Unit) {
+fun MatchScreen(
+    id: Long,
+    onBack: () -> Unit,
+    onOpen: (Long) -> Unit,
+    onStats: (Long) -> Unit,
+    onBoard: (Long) -> Unit,
+) {
     val app = app()
-    val dao = app.db.matches()
-    val row by remember(id) { dao.watch(id) }.collectAsState(initial = null)
-    val events by remember(id) { dao.events(id) }.collectAsState(initial = null)
-    val m = row
-    val evs = events
-    if (m == null || evs == null) {
+    val ui = rememberMatch(id)
+    if (ui == null) {
         Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background))
         return
     }
-    val board = remember(m.sport, m.rules, m.firstServer, evs) { Scoring.replay(m.setup, evs.map { it.ev() }) }
-    val sport = m.sportEnum
-    val done = m.finished || board.finished
+    val m = ui.m
+    val evs = ui.evs
+    val board = ui.board
+    val sport = ui.sport
+    val done = ui.done
     val haptic = LocalHapticFeedback.current
     val context = LocalContext.current
     val uiScope = rememberCoroutineScope()
@@ -134,88 +121,80 @@ fun MatchScreen(id: Long, onBack: () -> Unit, onOpen: (Long) -> Unit) {
         app.scope.launch { app.repo.f() }
     }
 
-    var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
-    LaunchedEffect(m.running) {
-        while (m.running) {
-            now = System.currentTimeMillis()
-            delay(200)
-        }
-        now = System.currentTimeMillis()
-    }
-    val clock = m.clockAt(now)
-
-    // The screen stays on while the match is being played.
-    val view = LocalView.current
-    DisposableEffect(done) {
-        view.keepScreenOn = !done
-        onDispose { view.keepScreenOn = false }
-    }
-
     var editing by remember { mutableStateOf<EventRow?>(null) }
     var renaming by remember { mutableStateOf(false) }
     var confirmFinish by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
+    var subFor by remember { mutableStateOf<Int?>(null) }
+    var askShootout by remember { mutableStateOf(false) }
     /** Id of the newest event whose alert the user closed: only alerts of newer events are shown. */
     var dismissedId by rememberSaveable { mutableLongStateOf(0L) }
-    val lastId = evs.lastOrNull()?.id ?: 0L
     var busy by remember { mutableStateOf(false) }
 
-    fun tap(side: Int) {
+    fun score(side: Int, kind: Int) {
         if (done) return
-        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-        val kind = if (sport == Sport.FOOTBALL) Kind.GOAL else Kind.POINT
         uiScope.launch {
-            val ok = app.scope.async { app.repo.score(m.id, side, kind) }.await()
-            if (!ok && sport == Sport.FOOTBALL) {
-                snackbar.showSnackbar("Đang nghỉ giữa hiệp: bấm “Bắt đầu hiệp” trước")
-            } else if (ok && sport == Sport.FOOTBALL) {
-                val goal = app.scope.async { dao.eventsOnce(m.id).lastOrNull { it.kind == Kind.GOAL } }.await() ?: return@launch
-                val r = snackbar.showSnackbar("Bàn thắng cho ${m.name(side)}", "Ai ghi?", duration = SnackbarDuration.Short)
-                if (r == SnackbarResult.ActionPerformed) editing = goal
+            val ok = app.tapScore(m, side, kind, { haptic.performHapticFeedback(HapticFeedbackType.LongPress) }) {
+                snackbar.showSnackbar(it)
+            }
+            if (ok && Kind.named(kind) && kind != Kind.SUB) {
+                val ev = app.scope.async { app.db.matches().eventsOnce(m.id).lastOrNull { it.kind == kind } }.await() ?: return@launch
+                val what = Kind.title(kind)
+                val r = snackbar.showSnackbar("$what · ${m.name(side)}", "Ghi tên", duration = SnackbarDuration.Short)
+                if (r == SnackbarResult.ActionPerformed) editing = ev
             }
         }
     }
 
-    val order = if (m.swapped) listOf(1, 0) else listOf(0, 1)
+    fun tap(side: Int) = score(side, if (sport == Sport.FOOTBALL) Kind.GOAL else Kind.POINT)
+
+    MatchFeedback(ui, onSide = ::tap)
 
     Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         BoxWithConstraints(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.statusBars)) {
             val wide = maxWidth > maxHeight
             val panelHeight = min(maxHeight * 0.42f, 360.dp)
             val top: @Composable ColumnScope.() -> Unit = {
-                TopBar(m, board, done, onBack,
+                TopBar(ui, onBack,
                     onSwap = { act { swap(m.id) } },
+                    onStats = { onStats(m.id) },
+                    onBoard = { onBoard(m.id) },
                     onRename = { renaming = true },
                     onFinish = { confirmFinish = true },
                     onReopen = { act { reopen(m.id) } },
-                    onShare = { share(context, m, board, evs) },
+                    onShareText = { shareText(context, ui) },
+                    onShareImage = { shareImage(context, ui) },
                     onDelete = { confirmDelete = true })
-                ClockBar(m, board, clock, done, onToggle = { act { toggleClock(m.id) } })
-                Banner(m, board, done, showAlert = lastId > dismissedId,
-                    onDismiss = { dismissedId = lastId },
-                    onSwap = { act { swap(m.id) }; dismissedId = lastId },
+                ClockBar(ui, onToggle = { act { toggleClock(m.id) } })
+                Banner(ui, showAlert = ui.lastId > dismissedId,
+                    onDismiss = { dismissedId = ui.lastId },
+                    onSwap = { act { swap(m.id) }; dismissedId = ui.lastId },
                     onRematch = {
                         if (!busy) {
                             busy = true // one tap = one new match
                             uiScope.launch { app.scope.async { app.repo.rematch(m.id) }.await()?.let(onOpen) }
                         }
                     },
-                    onShare = { share(context, m, board, evs) })
+                    onShare = { shareImage(context, ui) })
             }
             val panels: @Composable (Modifier) -> Unit = { mod ->
                 Row(mod.padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    order.forEach { side ->
-                        Panel(side, m, board, done, Modifier.weight(1f).fillMaxHeight()) { tap(side) }
-                    }
+                    ui.order.forEach { side -> Panel(side, ui, Modifier.weight(1f).fillMaxHeight()) { tap(side) } }
                 }
             }
             val controls: @Composable () -> Unit = {
-                // A match ended by hand is closed; one won by the rules can take back its last point.
-                Controls(m, board, done, order, evs.any { Kind.undoable(it.kind) } && !m.manualEnd,
-                    onUndo = { haptic.performHapticFeedback(HapticFeedbackType.LongPress); act { undo(m.id) } },
-                    onCard = { side, kind -> act { score(m.id, side, kind) } },
+                Controls(ui,
+                    // A match ended by hand is closed; one won by the rules can take back its last point.
+                    canUndo = evs.any { Kind.undoable(it.kind) } && !m.manualEnd,
+                    onUndo = {
+                        if (app.prefs.haptics) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        act { undo(m.id) }
+                    },
+                    onEvent = ::score,
+                    onSub = { subFor = it },
                     onPeriod = { start -> act { period(m.id, start) } },
-                    onFinish = { act { finish(m.id) } })
+                    onShootout = { askShootout = true },
+                    onFinish = { confirmFinish = true })
             }
             if (wide) {
                 Row(Modifier.fillMaxSize()) {
@@ -224,14 +203,14 @@ fun MatchScreen(id: Long, onBack: () -> Unit, onOpen: (Long) -> Unit) {
                         panels(Modifier.weight(1f).fillMaxWidth())
                         controls()
                     }
-                    Timeline(m, board, evs, Modifier.weight(1f).fillMaxHeight()) { editing = it }
+                    Timeline(ui, Modifier.weight(1f).fillMaxHeight()) { editing = it }
                 }
             } else {
                 Column(Modifier.fillMaxSize()) {
                     top()
                     panels(Modifier.height(panelHeight).fillMaxWidth())
                     controls()
-                    Timeline(m, board, evs, Modifier.weight(1f).fillMaxWidth()) { editing = it }
+                    Timeline(ui, Modifier.weight(1f).fillMaxWidth()) { editing = it }
                 }
             }
         }
@@ -239,11 +218,26 @@ fun MatchScreen(id: Long, onBack: () -> Unit, onOpen: (Long) -> Unit) {
     }
 
     editing?.let { e ->
-        EventDialog(e, m, board, evs.indexOf(e), onDismiss = { editing = null },
+        EventDialog(e, ui, evs.indexOf(e), onDismiss = { editing = null },
             onSave = { note -> act { setNote(e, note) }; editing = null },
             onDelete = { act { deleteEvent(e) }; editing = null })
     }
-    if (renaming) RenameDialog(m, onDismiss = { renaming = false }) { a, b -> act { rename(m.id, a, b) }; renaming = false }
+    subFor?.let { side ->
+        SubDialog(m.name(side), onDismiss = { subFor = null }) { out, inn ->
+            subFor = null
+            app.scope.launch { app.repo.score(m.id, side, Kind.SUB, listOf(out, inn).filter { it.isNotBlank() }.joinToString(" → ")) }
+        }
+    }
+    if (askShootout) AlertDialog(
+        onDismissRequest = { askShootout = false },
+        title = { Text("Đá luân lưu") },
+        text = { Text("Mỗi đội 5 lượt, sau đó đá từng lượt đến khi phân thắng thua. Đội nào đá trước?") },
+        confirmButton = { TextButton({ askShootout = false; act { startShootout(m.id, 0) } }) { Text(m.nameA) } },
+        dismissButton = { TextButton({ askShootout = false; act { startShootout(m.id, 1) } }) { Text(m.nameB) } },
+    )
+    if (renaming) RenameDialog(m.nameA, m.nameB, m.doubles, onDismiss = { renaming = false }) { a, b ->
+        act { rename(m.id, a, b) }; renaming = false
+    }
     if (confirmFinish) AlertDialog(
         onDismissRequest = { confirmFinish = false },
         title = { Text(if (sport == Sport.FOOTBALL) "Kết thúc trận?" else "Dừng trận ở đây?") },
@@ -271,30 +265,38 @@ fun MatchScreen(id: Long, onBack: () -> Unit, onOpen: (Long) -> Unit) {
 
 @Composable
 private fun TopBar(
-    m: MatchRow, board: Board, done: Boolean, onBack: () -> Unit, onSwap: () -> Unit, onRename: () -> Unit,
-    onFinish: () -> Unit, onReopen: () -> Unit, onShare: () -> Unit, onDelete: () -> Unit,
+    ui: MatchUi, onBack: () -> Unit, onSwap: () -> Unit, onStats: () -> Unit, onBoard: () -> Unit,
+    onRename: () -> Unit, onFinish: () -> Unit, onReopen: () -> Unit, onShareText: () -> Unit,
+    onShareImage: () -> Unit, onDelete: () -> Unit,
 ) {
     var menu by remember { mutableStateOf(false) }
-    val sport = m.sportEnum
+    val m = ui.m
+    val board = ui.board
+    val sport = ui.sport
     Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
         IconButton(onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Quay lại") }
         Column(Modifier.weight(1f)) {
-            Text("${sport.emoji}  ${sport.title}", style = MaterialTheme.typography.titleMedium)
+            Text("${sport.emoji}  ${sport.title}" + if (m.doubles) " · đôi" else "", style = MaterialTheme.typography.titleMedium,
+                maxLines = 1)
             val sub = when {
-                done -> "Đã kết thúc"
+                ui.done -> "Đã kết thúc"
+                board.shootout != null -> "Đá luân lưu"
                 sport == Sport.FOOTBALL -> if (board.period == 0) "Chưa bắt đầu"
                 else periodName(m.rulesObj, board.period).replaceFirstChar { it.uppercase() } + if (board.periodOpen) "" else " · đã hết"
                 else -> "${sport.setWord} ${board.setNo}" + (board.info?.let { " · $it" } ?: "")
             }
-            Text(sub, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(sub, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
         }
+        IconButton(onStats) { Icon(Icons.Filled.BarChart, "Thống kê trận") }
+        IconButton(onBoard) { Icon(Icons.Filled.Fullscreen, "Bảng điểm toàn màn hình") }
         IconButton(onSwap) { Icon(Icons.Filled.SwapHoriz, "Đổi bên trái / phải") }
         Box {
             IconButton({ menu = true }) { Icon(Icons.Filled.MoreVert, "Thêm") }
             DropdownMenu(menu, { menu = false }) {
-                DropdownMenuItem({ Text("Đổi tên hai bên") }, { menu = false; onRename() })
-                DropdownMenuItem({ Text("Chia sẻ kết quả") }, { menu = false; onShare() })
-                if (!done) DropdownMenuItem({ Text(if (sport == Sport.FOOTBALL) "Kết thúc trận" else "Dừng trận ở đây") },
+                DropdownMenuItem({ Text("Đổi tên") }, { menu = false; onRename() })
+                DropdownMenuItem({ Text("Chia sẻ ảnh kết quả") }, { menu = false; onShareImage() })
+                DropdownMenuItem({ Text("Chia sẻ dạng chữ") }, { menu = false; onShareText() })
+                if (!ui.done) DropdownMenuItem({ Text(if (sport == Sport.FOOTBALL) "Kết thúc trận" else "Dừng trận ở đây") },
                     { menu = false; onFinish() })
                 if (m.manualEnd) DropdownMenuItem({ Text("Chơi tiếp trận này") }, { menu = false; onReopen() })
                 DropdownMenuItem({ Text("Xoá trận", color = MaterialTheme.colorScheme.error) }, { menu = false; onDelete() })
@@ -305,35 +307,9 @@ private fun TopBar(
 
 /** The stopwatch: whole match for rally sports (+ this set), match minute for football. */
 @Composable
-private fun ClockBar(m: MatchRow, board: Board, clock: Long, done: Boolean, onToggle: () -> Unit) {
-    val sport = m.sportEnum
-    val r = m.rulesObj
-    var main: String
-    var extra: String? = null
-    var sub: String
-    if (sport == Sport.FOOTBALL) {
-        val k = board.period - 1
-        if (k < 0) {
-            main = "00:00"; sub = "Chạm ô đội ghi bàn hoặc “Bắt đầu hiệp 1”"
-        } else {
-            val (a, b) = FootballClock.display(r, k, clock - board.periodStarts[k])
-            main = a; extra = b
-            sub = periodName(r, k + 1).replaceFirstChar { it.uppercase() } + when {
-                done -> " · tổng ${fmtDuration(clock)}"
-                !board.periodOpen -> " · đã hết"
-                !m.running -> " · tạm dừng"
-                else -> ""
-            }
-        }
-    } else {
-        main = fmtClock(clock)
-        val setStart = board.history.lastOrNull()?.endMs ?: 0
-        sub = when {
-            m.startedAt == 0L -> "Chạm ô của bên thắng điểm để bắt đầu"
-            done -> "Tổng thời gian trận"
-            else -> "${sport.setWord} ${board.setNo}: ${fmtClock(clock - setStart)}" + if (!m.running) " · tạm dừng" else ""
-        }
-    }
+private fun ClockBar(ui: MatchUi, onToggle: () -> Unit) {
+    val m = ui.m
+    val c = clockText(ui)
     Surface(
         Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
         color = MaterialTheme.colorScheme.surfaceContainer,
@@ -342,17 +318,17 @@ private fun ClockBar(m: MatchRow, board: Board, clock: Long, done: Boolean, onTo
         Row(Modifier.padding(start = 18.dp, end = 10.dp, top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.Bottom) {
-                    Text(main, style = MaterialTheme.typography.displaySmall.copy(fontSize = 34.sp),
-                        color = if (m.running || done) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant)
-                    extra?.let {
+                    Text(c.main, style = MaterialTheme.typography.displaySmall.copy(fontSize = 34.sp),
+                        color = if (m.running || ui.done) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant)
+                    c.extra?.let {
                         Spacer(Modifier.width(8.dp))
                         Text(it, Modifier.padding(bottom = 4.dp), color = Amber, style = MaterialTheme.typography.titleMedium)
                     }
                 }
-                Text(sub, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                Text(c.sub, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
-            val canToggle = !done && (sport != Sport.FOOTBALL || board.periodOpen)
+            val canToggle = !ui.done && ui.board.shootout == null && (ui.sport != Sport.FOOTBALL || ui.board.periodOpen)
             if (canToggle) FilledTonalIconButton(onToggle, Modifier.size(52.dp)) {
                 Icon(if (m.running) Icons.Filled.Pause else Icons.Filled.PlayArrow,
                     if (m.running) "Tạm dừng đồng hồ" else "Chạy đồng hồ", Modifier.size(28.dp))
@@ -361,35 +337,49 @@ private fun ClockBar(m: MatchRow, board: Board, clock: Long, done: Boolean, onTo
     }
 }
 
-/** One line under the clock: what just happened (change ends…), who is at match point, or the result. */
+/** One line under the clock: the result, a time-out countdown, what just happened, or who is at match point. */
 @Composable
 private fun Banner(
-    m: MatchRow, board: Board, done: Boolean, showAlert: Boolean,
+    ui: MatchUi, showAlert: Boolean,
     onDismiss: () -> Unit, onSwap: () -> Unit, onRematch: () -> Unit, onShare: () -> Unit,
 ) {
+    val m = ui.m
+    val board = ui.board
     val alert = board.alert?.takeIf { showAlert }
+    // Time-out countdown (ticks on its own, the match clock does not run during a time-out).
+    val last = ui.evs.lastOrNull()
+    var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    val timeoutEnd = last?.takeIf { it.kind == Kind.TIMEOUT }?.let { it.at + ui.sport.timeoutSeconds * 1000L }
+    LaunchedEffect(timeoutEnd) {
+        while (timeoutEnd != null && System.currentTimeMillis() < timeoutEnd) {
+            now = System.currentTimeMillis()
+            delay(250)
+        }
+        now = System.currentTimeMillis()
+    }
     when {
-        done -> {
+        ui.done -> {
             val w = board.winner.takeIf { it >= 0 } ?: m.winner
             BannerBox(if (w >= 0) Team.brush(w) else HeroBrush) {
-                val (a, b) = board.score.split("-")
-                Text(when {
-                    w >= 0 -> "🏆  ${m.name(w)} thắng ${scoreFor(board, w)}"
-                    a == b -> "Hoà ${board.score}"
-                    else -> "Dừng trận ở ${board.score}"
-                },
-                    Modifier.weight(1f), color = Color.White, style = MaterialTheme.typography.titleMedium,
+                Text(resultText(ui), Modifier.weight(1f), color = Color.White, style = MaterialTheme.typography.titleMedium,
                     maxLines = 1, overflow = TextOverflow.Ellipsis)
                 TextButton(onShare) { Text("Chia sẻ", color = Color.White) }
-                FilledTonalButton(onRematch) { Text("Đấu lại") }
+                if (m.tournamentId == 0L) FilledTonalButton(onRematch) { Text("Đấu lại") }
             }
         }
-        alert != null -> BannerBox(androidx.compose.ui.graphics.SolidColor(Amber)) {
+        timeoutEnd != null && now < timeoutEnd -> BannerBox(SolidColor(MaterialTheme.colorScheme.primaryContainer)) {
+            val left = ((timeoutEnd - now + 999) / 1000).toInt()
+            Text("⏸  Hội ý · ${m.name(last?.side ?: 0)}", Modifier.weight(1f).padding(vertical = 10.dp),
+                style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onPrimaryContainer)
+            Text("0:%02d".format(left), Modifier.padding(end = 12.dp), style = MaterialTheme.typography.titleLarge,
+                color = MaterialTheme.colorScheme.onPrimaryContainer)
+        }
+        alert != null -> BannerBox(SolidColor(Amber)) {
             Text(alert, Modifier.weight(1f), color = Color(0xFF451A03), style = MaterialTheme.typography.titleMedium)
             if ("Đổi sân" in alert) TextButton(onSwap) { Text("Đổi bên", color = Color(0xFF451A03)) }
             TextButton(onDismiss) { Text("OK", color = Color(0xFF451A03)) }
         }
-        board.callouts.isNotEmpty() -> BannerBox(androidx.compose.ui.graphics.SolidColor(MaterialTheme.colorScheme.secondaryContainer)) {
+        board.callouts.isNotEmpty() -> BannerBox(SolidColor(MaterialTheme.colorScheme.secondaryContainer)) {
             Text(board.callouts.joinToString("  ·  ") { "${it.text.uppercase()} ${m.name(it.side)}" },
                 Modifier.weight(1f).padding(vertical = 10.dp), style = MaterialTheme.typography.titleSmall,
                 color = MaterialTheme.colorScheme.onSecondaryContainer, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -397,13 +387,8 @@ private fun Banner(
     }
 }
 
-private fun scoreFor(board: Board, side: Int): String {
-    val (a, b) = board.score.split("-").map { it.toIntOrNull() ?: 0 }
-    return if (side == 0) "$a-$b" else "$b-$a"
-}
-
 @Composable
-private fun BannerBox(brush: androidx.compose.ui.graphics.Brush, content: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit) {
+private fun BannerBox(brush: Brush, content: @Composable RowScope.() -> Unit) {
     Row(
         Modifier
             .fillMaxWidth()
@@ -416,91 +401,45 @@ private fun BannerBox(brush: androidx.compose.ui.graphics.Brush, content: @Compo
     )
 }
 
-/** Half of the scoreboard: tap anywhere on it to give this side the point (or goal). */
-@Composable
-private fun Panel(side: Int, m: MatchRow, board: Board, done: Boolean, modifier: Modifier, onTap: () -> Unit) {
-    val sport = m.sportEnum
-    val won = done && (board.winner.takeIf { it >= 0 } ?: m.winner) == side
-    BoxWithConstraints(
-        modifier
-            .clip(RoundedCornerShape(28.dp))
-            .background(Team.brush(side))
-            .clickable(enabled = !done, onClick = onTap),
-    ) {
-        val big: Dp = min(maxWidth * 0.62f, maxHeight * 0.48f)
-        val bigSp = with(androidx.compose.ui.platform.LocalDensity.current) { big.toSp() }
-        Column(Modifier.fillMaxSize().padding(14.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(m.name(side), color = Color.White, style = MaterialTheme.typography.titleMedium,
-                maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center)
-            if (sport != Sport.FOOTBALL) {
-                Row(Modifier.padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text("${sport.setWord}: ", color = Color.White.copy(alpha = 0.8f), style = MaterialTheme.typography.labelMedium)
-                    Pill(board.setsWon[side].toString())
-                    board.games?.let {
-                        Spacer(Modifier.width(8.dp))
-                        Text("Game: ", color = Color.White.copy(alpha = 0.8f), style = MaterialTheme.typography.labelMedium)
-                        Pill(it[side].toString())
-                    }
-                }
-            }
-            Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-                AnimatedContent(
-                    targetState = board.main[side],
-                    transitionSpec = { (slideInVertically { it / 2 } + fadeIn()) togetherWith (slideOutVertically { -it / 2 } + fadeOut()) },
-                    label = "score",
-                ) { s ->
-                    Text(s, color = Color.White, fontSize = if (s.length > 2) bigSp * 0.7f else bigSp,
-                        fontWeight = FontWeight.ExtraBold, style = MaterialTheme.typography.displayLarge,
-                        maxLines = 1)
-                }
-            }
-            when {
-                won -> Pill("🏆  Thắng", strong = true)
-                sport == Sport.FOOTBALL -> {
-                    val (y, r) = board.cards[side]
-                    if (y + r > 0) Text("🟨 $y   🟥 $r", color = Color.White, style = MaterialTheme.typography.labelLarge)
-                    else Spacer(Modifier.height(20.dp))
-                }
-                board.server == side && !done -> Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Pill("${sport.emoji}  Giao", strong = true)
-                    board.serveHint?.let {
-                        Text(it.removePrefix("Giao ").replaceFirstChar { c -> c.uppercase() }, color = Color.White.copy(alpha = 0.85f),
-                            style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(top = 2.dp))
-                    }
-                }
-                else -> Spacer(Modifier.height(20.dp))
-            }
-        }
-    }
-}
-
-@Composable
-private fun Pill(text: String, strong: Boolean = false) {
-    Text(
-        text,
-        Modifier
-            .clip(CircleShape)
-            .background(Color.White.copy(alpha = if (strong) 0.95f else 0.22f))
-            .padding(horizontal = 10.dp, vertical = 2.dp),
-        color = if (strong) Color(0xFF141726) else Color.White,
-        style = MaterialTheme.typography.labelLarge,
-    )
-}
-
 @Composable
 private fun Controls(
-    m: MatchRow, board: Board, done: Boolean, order: List<Int>, canUndo: Boolean,
-    onUndo: () -> Unit, onCard: (Int, Int) -> Unit, onPeriod: (Boolean) -> Unit, onFinish: () -> Unit,
+    ui: MatchUi, canUndo: Boolean, onUndo: () -> Unit, onEvent: (Int, Int) -> Unit, onSub: (Int) -> Unit,
+    onPeriod: (Boolean) -> Unit, onShootout: () -> Unit, onFinish: () -> Unit,
 ) {
-    val sport = m.sportEnum
+    val m = ui.m
+    val board = ui.board
+    val sport = ui.sport
     val r = m.rulesObj
+    val done = ui.done
+    val order = ui.order
     Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp)) {
-        if (sport == Sport.FOOTBALL && !done && board.periodOpen) {
+        // Per-side extras under each panel: cards / substitution / own goal (football), time-outs.
+        val footballExtras = sport == Sport.FOOTBALL && !done && board.period > 0 && board.shootout == null
+        val timeouts = sport.timeouts > 0 && !done
+        if (footballExtras || timeouts) {
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 order.forEach { side ->
                     Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        OutlinedButton({ onCard(side, Kind.YELLOW) }, Modifier.weight(1f), contentPadding = PaddingValues(0.dp)) { Text("🟨 Vàng") }
-                        OutlinedButton({ onCard(side, Kind.RED) }, Modifier.weight(1f), contentPadding = PaddingValues(0.dp)) { Text("🟥 Đỏ") }
+                        if (footballExtras) {
+                            OutlinedButton({ onEvent(side, Kind.YELLOW) }, Modifier.weight(1f), contentPadding = PaddingValues(0.dp)) { Text("🟨") }
+                            OutlinedButton({ onEvent(side, Kind.RED) }, Modifier.weight(1f), contentPadding = PaddingValues(0.dp)) { Text("🟥") }
+                            var more by remember { mutableStateOf(false) }
+                            Box(Modifier.weight(1f)) {
+                                OutlinedButton({ more = true }, Modifier.fillMaxWidth(), contentPadding = PaddingValues(0.dp)) { Text("⋯") }
+                                DropdownMenu(more, { more = false }) {
+                                    DropdownMenuItem({ Text("🔁  Thay người") }, { more = false; onSub(side) })
+                                    // An own goal by this team counts for the other one.
+                                    DropdownMenuItem({ Text("🥅  Phản lưới nhà (bàn cho ${m.name(1 - side)})") },
+                                        { more = false; onEvent(1 - side, Kind.OWN_GOAL) })
+                                }
+                            }
+                        } else {
+                            val left = sport.timeouts - board.timeouts[side]
+                            OutlinedButton({ onEvent(side, Kind.TIMEOUT) }, Modifier.weight(1f), enabled = left > 0,
+                                contentPadding = PaddingValues(horizontal = 4.dp)) {
+                                Text("⏸ Hội ý ($left)", maxLines = 1)
+                            }
+                        }
                     }
                 }
             }
@@ -512,32 +451,48 @@ private fun Controls(
                 Spacer(Modifier.width(6.dp))
                 Text("Hoàn tác")
             }
-            if (sport == Sport.FOOTBALL && !done) {
-                val p = board.period
-                when {
-                    board.periodOpen -> Button({ onPeriod(false) }, Modifier.weight(1f)) {
-                        Text("Kết thúc ${periodName(r, p)}")
-                    }
-                    p < r.periods -> Button({ onPeriod(true) }, Modifier.weight(1f)) { Text("Bắt đầu ${periodName(r, p + 1)}") }
-                    else -> {
-                        if (p < r.periods + 2) OutlinedButton({ onPeriod(true) }, Modifier.weight(1f)) {
-                            Text(if (p == r.periods) "Đá hiệp phụ" else "Hiệp phụ 2")
+            when {
+                sport == Sport.FOOTBALL && !done && board.shootout != null -> {
+                    val next = board.shootoutNext.coerceAtLeast(0)
+                    Text("Lượt: ${m.name(next)}", Modifier.weight(1f), style = MaterialTheme.typography.labelLarge,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Button({ onEvent(next, Kind.PEN_SCORED) }, contentPadding = PaddingValues(horizontal = 12.dp)) { Text("✅ Vào") }
+                    OutlinedButton({ onEvent(next, Kind.PEN_MISSED) }, contentPadding = PaddingValues(horizontal = 12.dp)) { Text("❌ Trượt") }
+                }
+                sport == Sport.FOOTBALL && !done -> {
+                    val p = board.period
+                    when {
+                        board.periodOpen -> Button({ onPeriod(false) }, Modifier.weight(1f)) { Text("Kết thúc ${periodName(r, p)}") }
+                        p < r.periods -> Button({ onPeriod(true) }, Modifier.weight(1f)) { Text("Bắt đầu ${periodName(r, p + 1)}") }
+                        else -> {
+                            var more by remember { mutableStateOf(false) }
+                            Box(Modifier.weight(1f)) {
+                                OutlinedButton({ more = true }, Modifier.fillMaxWidth()) { Text("Đá tiếp…") }
+                                DropdownMenu(more, { more = false }) {
+                                    if (p < r.periods + 2) DropdownMenuItem(
+                                        { Text(if (p == r.periods) "Đá hiệp phụ 1" else "Đá hiệp phụ 2") },
+                                        { more = false; onPeriod(true) },
+                                    )
+                                    DropdownMenuItem({ Text("Đá luân lưu 11m") }, { more = false; onShootout() })
+                                }
+                            }
+                            Button(onFinish, Modifier.weight(1f)) { Text("Kết thúc trận") }
                         }
-                        Button({ onFinish() }, Modifier.weight(1f), colors = ButtonDefaults.buttonColors()) { Text("Kết thúc trận") }
                     }
                 }
-            } else {
-                Spacer(Modifier.weight(1f))
-                if (board.history.isNotEmpty()) LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp), reverseLayout = true) {
-                    items(board.history.reversed()) { s ->
-                        val (l, rr) = order.map { if (it == 0) s.a else s.b }
-                        val tb = if (s.tbA >= 0) "(${kotlin.math.min(s.tbA, s.tbB)})" else ""
-                        Text(
-                            if (s.superTb) "[$l-$rr]" else "$l-$rr$tb",
-                            Modifier.clip(RoundedCornerShape(10.dp)).background(Team.color(s.winner).copy(alpha = 0.15f))
-                                .padding(horizontal = 10.dp, vertical = 6.dp),
-                            color = Team.color(s.winner), style = MaterialTheme.typography.labelLarge,
-                        )
+                else -> {
+                    Spacer(Modifier.weight(1f))
+                    if (board.history.isNotEmpty()) LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp), reverseLayout = true) {
+                        items(board.history.reversed()) { s ->
+                            val (l, rr) = order.map { if (it == 0) s.a else s.b }
+                            val tb = if (s.tbA >= 0) "(${kotlin.math.min(s.tbA, s.tbB)})" else ""
+                            Text(
+                                if (s.superTb) "[$l-$rr]" else "$l-$rr$tb",
+                                Modifier.clip(RoundedCornerShape(10.dp)).background(Team.color(s.winner).copy(alpha = 0.15f))
+                                    .padding(horizontal = 10.dp, vertical = 6.dp),
+                                color = Team.color(s.winner), style = MaterialTheme.typography.labelLarge,
+                            )
+                        }
                     }
                 }
             }
@@ -547,10 +502,15 @@ private fun Controls(
 
 /** Every point / goal with its time, newest first, grouped by set. Tennis hides single points by default. */
 @Composable
-private fun Timeline(m: MatchRow, board: Board, evs: List<EventRow>, modifier: Modifier, onEdit: (EventRow) -> Unit) {
-    val sport = m.sportEnum
+private fun Timeline(ui: MatchUi, modifier: Modifier, onEdit: (EventRow) -> Unit) {
+    val board = ui.board
+    val evs = ui.evs
+    val sport = ui.sport
     var allPoints by rememberSaveable { mutableStateOf(sport != Sport.TENNIS) }
-    val rows = evs.indices.reversed().filter { i -> board.lines.getOrNull(i) != null && (allPoints || board.lines[i].major) }
+    val rows = evs.indices.reversed().filter { i ->
+        val l = board.lines.getOrNull(i)
+        l != null && (l.counted || Kind.divider(evs[i].kind)) && (allPoints || l.major)
+    }
     LazyColumn(modifier, contentPadding = PaddingValues(bottom = 80.dp)) {
         item {
             Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 12.dp, top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -585,19 +545,21 @@ private fun Timeline(m: MatchRow, board: Board, evs: List<EventRow>, modifier: M
                     }
                 }
             }
-            item(key = e.id) { EventLine(m, e, line, onClick = { if (e.side >= 0) onEdit(e) }) }
+            item(key = e.id) { EventLine(ui, e, line, onClick = { if (!Kind.divider(e.kind)) onEdit(e) }) }
         }
         item { Spacer(Modifier.windowInsetsPadding(WindowInsets.navigationBars)) }
     }
 }
 
 @Composable
-private fun EventLine(m: MatchRow, e: EventRow, line: com.samuelcruz.ghidiem.core.Line, onClick: () -> Unit) {
-    if (e.side < 0) {
+private fun EventLine(ui: MatchUi, e: EventRow, line: Line, onClick: () -> Unit) {
+    val m = ui.m
+    if (Kind.divider(e.kind)) {
+        val text = if (e.kind == Kind.SHOOTOUT_START) "  Đá luân lưu · ${m.name(e.side)} đá trước  "
+        else "  ${line.time}  ${line.label}  ${line.score}  "
         Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             HorizontalDivider(Modifier.weight(1f))
-            Text("  ${line.time}  ${line.label}  ${line.score}  ", style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(text, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             HorizontalDivider(Modifier.weight(1f))
         }
         return
@@ -611,19 +573,15 @@ private fun EventLine(m: MatchRow, e: EventRow, line: com.samuelcruz.ghidiem.cor
         Box(Modifier.size(10.dp).clip(CircleShape).background(Team.light(e.side)))
         Spacer(Modifier.width(10.dp))
         Column(Modifier.weight(1f)) {
-            val icon = when (e.kind) {
-                Kind.GOAL -> "⚽ "
-                Kind.YELLOW -> "🟨 "
-                Kind.RED -> "🟥 "
-                else -> ""
-            }
-            Text(icon + m.name(e.side) + if (e.note.isNotBlank()) " · ${e.note}" else "",
+            Text(Kind.icon(e.kind) + m.name(e.side) + if (e.note.isNotBlank()) " · ${e.note}" else "",
                 style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis,
                 fontWeight = if (line.major) FontWeight.SemiBold else FontWeight.Normal)
-            if (line.label.isNotEmpty() && e.kind == Kind.POINT) Text(line.label, style = MaterialTheme.typography.labelSmall,
-                color = Team.color(e.side))
-            else if (e.kind == Kind.YELLOW || e.kind == Kind.RED) Text(line.label, style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant)
+            when {
+                line.label.isNotEmpty() && e.kind == Kind.POINT -> Text(line.label, style = MaterialTheme.typography.labelSmall,
+                    color = Team.color(e.side))
+                e.kind != Kind.POINT && e.kind != Kind.GOAL -> Text(line.label, style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
         }
         Text(line.score, style = MaterialTheme.typography.titleSmall,
             fontWeight = if (line.major) FontWeight.Bold else FontWeight.Medium)
@@ -632,17 +590,13 @@ private fun EventLine(m: MatchRow, e: EventRow, line: com.samuelcruz.ghidiem.cor
 
 @Composable
 private fun EventDialog(
-    e: EventRow, m: MatchRow, board: Board, index: Int,
+    e: EventRow, ui: MatchUi, index: Int,
     onDismiss: () -> Unit, onSave: (String) -> Unit, onDelete: () -> Unit,
 ) {
+    val m = ui.m
     var note by remember(e.id) { mutableStateOf(e.note) }
-    val line = board.lines.getOrNull(index)
-    val what = when (e.kind) {
-        Kind.GOAL -> "Bàn thắng"
-        Kind.YELLOW -> "Thẻ vàng"
-        Kind.RED -> "Thẻ đỏ"
-        else -> "Điểm"
-    }
+    val line = ui.board.lines.getOrNull(index)
+    val what = Kind.title(e.kind)
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("$what · ${m.name(e.side)}") },
@@ -651,7 +605,12 @@ private fun EventDialog(
                 Text("Lúc ${line?.time ?: ""}" + (line?.score?.takeIf { it.isNotEmpty() }?.let { " · tỉ số $it" } ?: ""),
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Spacer(Modifier.height(12.dp))
-                OutlinedTextField(note, { note = it }, label = { Text(if (m.sportEnum == Sport.FOOTBALL) "Cầu thủ" else "Ghi chú") },
+                val label = when {
+                    e.kind == Kind.OWN_GOAL -> "Cầu thủ phản lưới (đội ${m.name(1 - e.side)})"
+                    ui.sport == Sport.FOOTBALL -> "Cầu thủ"
+                    else -> "Ghi chú"
+                }
+                OutlinedTextField(note, { note = it }, label = { Text(label) },
                     singleLine = true, keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words))
                 Spacer(Modifier.height(8.dp))
                 TextButton(onDelete) { Text("Xoá ${what.lowercase()} này", color = MaterialTheme.colorScheme.error) }
@@ -663,9 +622,28 @@ private fun EventDialog(
 }
 
 @Composable
-private fun RenameDialog(m: MatchRow, onDismiss: () -> Unit, onSave: (String, String) -> Unit) {
-    var a by remember { mutableStateOf(m.nameA) }
-    var b by remember { mutableStateOf(m.nameB) }
+private fun SubDialog(team: String, onDismiss: () -> Unit, onSave: (String, String) -> Unit) {
+    var out by remember { mutableStateOf("") }
+    var inn by remember { mutableStateOf("") }
+    val caps = KeyboardOptions(capitalization = KeyboardCapitalization.Words)
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Thay người · $team") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(out, { out = it }, singleLine = true, label = { Text("Ra sân") }, keyboardOptions = caps)
+                OutlinedTextField(inn, { inn = it }, singleLine = true, label = { Text("Vào sân") }, keyboardOptions = caps)
+            }
+        },
+        confirmButton = { TextButton({ onSave(out.trim(), inn.trim()) }) { Text("Ghi") } },
+        dismissButton = { TextButton(onDismiss) { Text("Thôi") } },
+    )
+}
+
+@Composable
+fun RenameDialog(nameA: String, nameB: String, doubles: Boolean, onDismiss: () -> Unit, onSave: (String, String) -> Unit) {
+    var a by remember { mutableStateOf(nameA) }
+    var b by remember { mutableStateOf(nameB) }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Đổi tên") },
@@ -673,36 +651,11 @@ private fun RenameDialog(m: MatchRow, onDismiss: () -> Unit, onSave: (String, St
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(a, { a = it }, singleLine = true, label = { Text("Bên đỏ") })
                 OutlinedTextField(b, { b = it }, singleLine = true, label = { Text("Bên xanh") })
+                if (doubles) Text("Đánh đôi: giữ dạng “Người 1 / Người 2” để app biết ai giao.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         },
         confirmButton = { TextButton({ if (a.isNotBlank() && b.isNotBlank()) onSave(a, b) }) { Text("Lưu") } },
         dismissButton = { TextButton(onDismiss) { Text("Thôi") } },
     )
-}
-
-private val shareDate = SimpleDateFormat("HH:mm dd/MM/yyyy", Locale.forLanguageTag("vi"))
-
-/** Plain-text result for Zalo / Messenger. */
-private fun share(context: Context, m: MatchRow, board: Board, evs: List<EventRow>) {
-    val sport = m.sportEnum
-    val (a, b) = board.score.split("-")
-    val text = buildString {
-        appendLine("${sport.emoji} ${sport.title} · ${shareDate.format(Date(if (m.startedAt > 0) m.startedAt else m.createdAt))}")
-        appendLine("${m.nameA} $a – $b ${m.nameB}")
-        if (sport != Sport.FOOTBALL && board.history.isNotEmpty()) {
-            appendLine("${sport.setWord}: " + board.history.joinToString(" · ") { it.text() })
-        }
-        val total = m.clockAt(System.currentTimeMillis())
-        if (total > 0) appendLine("Thời gian: ${fmtDuration(total)}")
-        if (sport == Sport.FOOTBALL) {
-            evs.forEachIndexed { i, e ->
-                if (e.side < 0) return@forEachIndexed
-                val icon = when (e.kind) { Kind.GOAL -> "⚽"; Kind.YELLOW -> "🟨"; Kind.RED -> "🟥"; else -> "" }
-                appendLine("${board.lines[i].time} $icon ${m.name(e.side)}" + if (e.note.isNotBlank()) " (${e.note})" else "")
-            }
-        }
-        if (!m.finished && !board.finished) append("(đang diễn ra)")
-    }.trim()
-    val send = Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, text)
-    context.startActivity(Intent.createChooser(send, "Chia sẻ kết quả"))
 }
