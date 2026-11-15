@@ -26,7 +26,7 @@ enum class Sport(val title: String, val emoji: String, val setWord: String) {
     val timeoutSeconds get() = if (this == VOLLEYBALL) 30 else 60
 
     fun defaultRules(): Rules = when (this) {
-        FOOTBALL -> Rules(periodMinutes = 45, periods = 2, extraMinutes = 15)
+        FOOTBALL -> Rules(periodMinutes = 45, periods = 2, extraMinutes = 15, players = 11)
         BADMINTON -> Rules(bestOf = 3, points = 21, decidingPoints = 21, cap = 30)
         VOLLEYBALL -> Rules(bestOf = 5, points = 25, decidingPoints = 15, cap = 0)
         TABLE_TENNIS -> Rules(bestOf = 5, points = 11, decidingPoints = 11, cap = 0)
@@ -67,6 +67,8 @@ data class Rules(
     val periodMinutes: Int = 45,
     val periods: Int = 2,
     val extraMinutes: Int = 15,
+    /** Football players per side on the pitch (11, 7, 5); sent-off players are taken off this number. */
+    val players: Int = 11,
 ) {
     fun toJson() = json.encodeToString(serializer(), this)
 

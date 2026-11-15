@@ -203,4 +203,42 @@ class FeaturesTest {
         assertEquals(10 to 8, smallScores("[10-8]"))
         assertEquals(0 to 0, smallScores("Luân lưu 4-3".substringBefore("Luân")))
     }
+
+    // ---- Football: cards per player, players on the pitch
+
+    private fun football(players: Int, vararg evs: Ev) = Scoring.replay(
+        Setup(Sport.FOOTBALL, Sport.FOOTBALL.defaultRules().copy(players = players)),
+        listOf(Ev(-1, Kind.PERIOD_START, 0)) + evs.toList(),
+    )
+
+    @Test fun secondYellowSendsOff() {
+        var b = football(11, Ev(0, Kind.YELLOW, 0, "Nam"))
+        assertEquals(listOf(11, 11), b.onField)
+        assertEquals(listOf("Nam"), b.booked[0])
+        // Same player (case and spaces do not matter): sent off.
+        b = football(11, Ev(0, Kind.YELLOW, 0, "Nam"), Ev(0, Kind.YELLOW, 60_000, " nam "))
+        assertEquals(listOf(10, 11), b.onField)
+        assertEquals(listOf("Nam"), b.sentOff[0]) // as first typed
+        assertTrue(b.booked[0].isEmpty())
+        assertEquals("Thẻ vàng thứ 2 · bị đuổi", b.lines.last().label)
+        assertEquals("Nam bị đuổi · còn 10 người", b.alert)
+        // Two yellows for two different players, or without names: nobody leaves.
+        b = football(11, Ev(0, Kind.YELLOW, 0, "Nam"), Ev(0, Kind.YELLOW, 0, "Hùng"), Ev(0, Kind.YELLOW, 0), Ev(0, Kind.YELLOW, 0))
+        assertEquals(11, b.onField[0])
+        assertEquals(4, b.cards[0][0])
+    }
+
+    @Test fun redCardsAndMinimum() {
+        var b = football(7, Ev(1, Kind.RED, 0, "Lan"), Ev(1, Kind.RED, 0))
+        assertEquals(listOf(7, 5), b.onField)
+        assertEquals(listOf("Lan", "?"), b.sentOff[1])
+        // A red card for a player already sent off does not count twice.
+        b = football(11, Ev(0, Kind.YELLOW, 0, "Nam"), Ev(0, Kind.YELLOW, 0, "Nam"), Ev(0, Kind.RED, 0, "Nam"))
+        assertEquals(10, b.onField[0])
+        // 11-a-side below 7 players: the match cannot go on.
+        val reds = (1..5).map { Ev(0, Kind.RED, 0, "P$it") }.toTypedArray()
+        b = football(11, *reds)
+        assertEquals(6, b.onField[0])
+        assertTrue(b.alert!!.contains("dưới 7 người"))
+    }
 }

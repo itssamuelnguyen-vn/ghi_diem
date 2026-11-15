@@ -94,6 +94,7 @@ fun StatsScreen(id: Long, onBack: () -> Unit) {
                 if (sport == Sport.FOOTBALL) {
                     Compare("Thẻ vàng", a.yellow, b.yellow)
                     Compare("Thẻ đỏ", a.red, b.red)
+                    Compare("Bị đuổi khỏi sân", ui.board.sentOff[0].size, ui.board.sentOff[1].size)
                     Compare("Thay người", a.subs, b.subs)
                 }
                 if (sport.timeouts > 0) Compare("Hội ý", a.timeouts, b.timeouts)

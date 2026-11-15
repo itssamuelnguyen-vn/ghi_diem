@@ -189,6 +189,8 @@ fun RulesForm(sport: Sport, rules: Rules, onChange: (Rules) -> Unit) {
             Chips(listOf(10, 15, 20, 25, 30, 35, 40, 45), r.periodMinutes, { "$it phút" }) { onChange(r.copy(periodMinutes = it)) }
             Label("Số hiệp")
             Chips(listOf(1, 2), r.periods, { "$it hiệp" }) { onChange(r.copy(periods = it)) }
+            Label("Số người mỗi đội trên sân")
+            Chips(listOf(5, 7, 11), r.players, { "Sân $it" }) { onChange(r.copy(players = it)) }
             Label("Hiệp phụ (nếu đá thêm)")
             Chips(listOf(5, 10, 15), r.extraMinutes, { "$it phút" }) { onChange(r.copy(extraMinutes = it)) }
             Hint("Đồng hồ chạy theo từng hiệp; hết giờ chính thức thì app kêu, quá giờ thì hiện bù giờ (45+2'). Hoà thì có thể đá hiệp phụ hoặc luân lưu.")

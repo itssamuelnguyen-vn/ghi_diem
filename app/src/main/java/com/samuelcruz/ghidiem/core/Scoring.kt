@@ -85,6 +85,12 @@ data class Board(
     val shootout: List<List<Boolean>>? = null,
     /** Side to kick next in the shoot-out. */
     val shootoutNext: Int = -1,
+    /** Football: players of each side still on the pitch (rules' players minus those sent off). */
+    val onField: List<Int> = listOf(0, 0),
+    /** Football: names sent off (red card, or second yellow), per side; "?" for a red card without a name. */
+    val sentOff: List<List<String>> = listOf(emptyList(), emptyList()),
+    /** Football: names with one yellow card who are still on the pitch (a second one sends them off). */
+    val booked: List<List<String>> = listOf(emptyList(), emptyList()),
 ) {
     /** Alert of the last event (shown as a banner until the next event). */
     val alert get() = lines.lastOrNull()?.alert
@@ -463,6 +469,29 @@ internal class Football(private val r: Rules, private val firstKicker: Int) {
 
     private fun score() = "${goals[0]}-${goals[1]}"
 
+    /** Yellow cards per player key (lowercase name) of each side. */
+    private val yellows = Array(2) { mutableMapOf<String, Int>() }
+    /** The name as typed with the first yellow card (keys are lowercase). */
+    private val firstNames = Array(2) { mutableMapOf<String, String>() }
+    /** Sent-off players: shown names and their keys. */
+    private val off = Array(2) { mutableListOf<String>() }
+    private val offKeys = Array(2) { mutableSetOf<String>() }
+
+    private fun sendOff(side: Int, name: String) {
+        off[side] += name.ifEmpty { "?" }
+        if (name.isNotEmpty()) offKeys[side] += name.lowercase()
+    }
+
+    private fun onField(side: Int) = (r.players - off[side].size).coerceAtLeast(0)
+
+    /** "Nam bị đuổi · còn 10 người", plus the 7-player minimum of 11-a-side football. */
+    private fun sentOffAlert(side: Int, name: String): String {
+        val left = onField(side)
+        val who = name.ifEmpty { "1 cầu thủ" }
+        val base = "$who bị đuổi · còn $left người"
+        return if (r.players == 11 && left < 7) "$base: dưới 7 người, theo luật trận đấu phải dừng" else base
+    }
+
     /** Kicks each side has left in the first five (0 once in sudden death). */
     private fun shootoutWinner(): Int {
         val p = pens ?: return -1
@@ -502,11 +531,26 @@ internal class Football(private val r: Rules, private val firstKicker: Int) {
                 }
                 Kind.YELLOW -> {
                     yellow[e.side]++
-                    Line("", Kind.title(e.kind), true, minute, k + 1, diff = goals[0] - goals[1])
+                    val name = e.note.trim()
+                    val key = name.lowercase()
+                    // Cards are counted per player (by the name or shirt number typed): a second yellow is a red.
+                    val n = if (name.isEmpty() || key in offKeys[e.side]) 0 else yellows[e.side].merge(key, 1, Int::plus) ?: 1
+                    if (n == 1) firstNames[e.side].putIfAbsent(key, name)
+                    if (n >= 2) {
+                        val shown = firstNames[e.side][key] ?: name
+                        sendOff(e.side, shown)
+                        Line("", "Thẻ vàng thứ 2 · bị đuổi", true, minute, k + 1, sentOffAlert(e.side, shown), diff = goals[0] - goals[1])
+                    } else Line("", Kind.title(e.kind), true, minute, k + 1, diff = goals[0] - goals[1])
                 }
                 Kind.RED -> {
                     red[e.side]++
-                    Line("", Kind.title(e.kind), true, minute, k + 1, diff = goals[0] - goals[1])
+                    val name = e.note.trim()
+                    if (name.isNotEmpty() && name.lowercase() in offKeys[e.side]) {
+                        Line("", "Thẻ đỏ (đã bị đuổi)", true, minute, k + 1, diff = goals[0] - goals[1])
+                    } else {
+                        sendOff(e.side, name)
+                        Line("", "Thẻ đỏ · bị đuổi", true, minute, k + 1, sentOffAlert(e.side, name), diff = goals[0] - goals[1])
+                    }
                 }
                 Kind.SUB -> Line("", Kind.title(e.kind), true, minute, k + 1, diff = goals[0] - goals[1])
                 Kind.SHOOTOUT_START -> {
@@ -549,6 +593,11 @@ internal class Football(private val r: Rules, private val firstKicker: Int) {
             setNo = max(starts.size, 1),
             shootout = pens?.map { it.toList() },
             shootoutNext = if (pw >= 0) -1 else nextKicker(),
+            onField = listOf(onField(0), onField(1)),
+            sentOff = off.map { it.toList() },
+            booked = (0..1).map { s ->
+                yellows[s].filter { (k, n) -> n == 1 && k !in offKeys[s] }.keys.map { k -> firstNames[s][k] ?: k }
+            },
         )
     }
 

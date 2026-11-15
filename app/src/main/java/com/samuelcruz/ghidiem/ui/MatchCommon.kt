@@ -208,8 +208,8 @@ fun announce(ui: MatchUi, e: EventRow, line: Line): String {
         }
         Kind.GOAL -> "Vào! $name. ${b.main[0]}, ${b.main[1]}"
         Kind.OWN_GOAL -> "Phản lưới nhà. Bàn thắng cho $name. ${b.main[0]}, ${b.main[1]}"
-        Kind.YELLOW -> "Thẻ vàng, $name"
-        Kind.RED -> "Thẻ đỏ, $name"
+        Kind.YELLOW -> "Thẻ vàng, ${e.note.ifBlank { name }}" + if (e.note.isNotBlank()) ", $name" else ""
+        Kind.RED -> "Thẻ đỏ, ${e.note.ifBlank { name }}" + if (e.note.isNotBlank()) ", $name" else ""
         Kind.SUB -> "Thay người, $name"
         Kind.TIMEOUT -> "Hội ý, $name"
         Kind.PEN_SCORED -> "Vào. Luân lưu ${b.shootoutScore}"
@@ -293,8 +293,18 @@ fun Panel(side: Int, ui: MatchUi, modifier: Modifier, huge: Boolean = false, onL
                 won -> Pill("🏆  Thắng", strong = true)
                 sport == Sport.FOOTBALL -> {
                     val (y, r) = board.cards[side]
-                    if (y + r > 0) Text("🟨 $y   🟥 $r", color = Color.White, style = MaterialTheme.typography.labelLarge)
-                    else Spacer(Modifier.height(20.dp))
+                    val full = m.rulesObj.players
+                    val left = board.onField[side]
+                    // Players on the pitch, highlighted once someone was sent off.
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Pill("👥 $left/$full", strong = left < full)
+                        if (y + r > 0) Text("   🟨 $y  🟥 $r", color = Color.White, style = MaterialTheme.typography.labelLarge)
+                    }
+                    if (board.sentOff[side].isNotEmpty()) Text(
+                        "Bị đuổi: " + board.sentOff[side].joinToString(", ") { if (it == "?") "không rõ tên" else it },
+                        color = Color.White.copy(alpha = 0.85f), style = MaterialTheme.typography.labelSmall,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 2.dp),
+                    )
                 }
                 board.server == side && !done -> Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     val who = players.getOrNull(board.serverPlayer)?.let { "$it giao" } ?: "Giao"

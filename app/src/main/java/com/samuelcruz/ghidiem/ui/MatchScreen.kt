@@ -127,6 +127,8 @@ fun MatchScreen(
     var confirmDelete by remember { mutableStateOf(false) }
     var subFor by remember { mutableStateOf<Int?>(null) }
     var askShootout by remember { mutableStateOf(false) }
+    /** (side, YELLOW / RED) waiting for the player's name. */
+    var cardFor by remember { mutableStateOf<Pair<Int, Int>?>(null) }
     /** Id of the newest event whose alert the user closed: only alerts of newer events are shown. */
     var dismissedId by rememberSaveable { mutableLongStateOf(0L) }
     var busy by remember { mutableStateOf(false) }
@@ -137,7 +139,8 @@ fun MatchScreen(
             val ok = app.tapScore(m, side, kind, { haptic.performHapticFeedback(HapticFeedbackType.LongPress) }) {
                 snackbar.showSnackbar(it)
             }
-            if (ok && Kind.named(kind) && kind != Kind.SUB) {
+            // Cards get their player in CardDialog before they are recorded.
+            if (ok && Kind.named(kind) && kind != Kind.SUB && kind != Kind.YELLOW && kind != Kind.RED) {
                 val ev = app.scope.async { app.db.matches().eventsOnce(m.id).lastOrNull { it.kind == kind } }.await() ?: return@launch
                 val what = Kind.title(kind)
                 val r = snackbar.showSnackbar("$what · ${m.name(side)}", "Ghi tên", duration = SnackbarDuration.Short)
@@ -201,6 +204,7 @@ fun MatchScreen(
                     },
                     onEvent = ::score,
                     onSub = { subFor = it },
+                    onCard = { side, kind -> cardFor = side to kind },
                     onPeriod = { start -> act { period(m.id, start) } },
                     onShootout = { askShootout = true },
                     onFinish = { confirmFinish = true })
@@ -230,6 +234,13 @@ fun MatchScreen(
         EventDialog(e, ui, evs.indexOf(e), onDismiss = { editing = null },
             onSave = { note -> act { setNote(e, note) }; editing = null },
             onDelete = { act { deleteEvent(e) }; editing = null })
+    }
+    cardFor?.let { (side, kind) ->
+        CardDialog(side, kind, ui, onDismiss = { cardFor = null }) { name ->
+            cardFor = null
+            if (app.prefs.haptics) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+            app.scope.launch { app.repo.score(m.id, side, kind, name) }
+        }
     }
     subFor?.let { side ->
         SubDialog(m.name(side), onDismiss = { subFor = null }) { out, inn ->
@@ -413,6 +424,7 @@ private fun BannerBox(brush: Brush, content: @Composable RowScope.() -> Unit) {
 @Composable
 private fun Controls(
     ui: MatchUi, canUndo: Boolean, onUndo: () -> Unit, onEvent: (Int, Int) -> Unit, onSub: (Int) -> Unit,
+    onCard: (Int, Int) -> Unit,
     onPeriod: (Boolean) -> Unit, onShootout: () -> Unit, onFinish: () -> Unit,
 ) {
     val m = ui.m
@@ -430,8 +442,8 @@ private fun Controls(
                 order.forEach { side ->
                     Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         if (footballExtras) {
-                            OutlinedButton({ onEvent(side, Kind.YELLOW) }, Modifier.weight(1f), contentPadding = PaddingValues(0.dp)) { Text("🟨") }
-                            OutlinedButton({ onEvent(side, Kind.RED) }, Modifier.weight(1f), contentPadding = PaddingValues(0.dp)) { Text("🟥") }
+                            OutlinedButton({ onCard(side, Kind.YELLOW) }, Modifier.weight(1f), contentPadding = PaddingValues(0.dp)) { Text("🟨") }
+                            OutlinedButton({ onCard(side, Kind.RED) }, Modifier.weight(1f), contentPadding = PaddingValues(0.dp)) { Text("🟥") }
                             var more by remember { mutableStateOf(false) }
                             Box(Modifier.weight(1f)) {
                                 OutlinedButton({ more = true }, Modifier.fillMaxWidth(), contentPadding = PaddingValues(0.dp)) { Text("⋯") }
@@ -627,6 +639,65 @@ private fun EventDialog(
         },
         confirmButton = { TextButton({ onSave(note) }) { Text("Lưu") } },
         dismissButton = { TextButton(onDismiss) { Text("Đóng") } },
+    )
+}
+
+/**
+ * Who gets the card: name or shirt number, with one-tap picks. A second yellow for the same name sends the player
+ * off (the engine counts per name), so the picks put players already booked first.
+ */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@Composable
+private fun CardDialog(side: Int, kind: Int, ui: MatchUi, onDismiss: () -> Unit, onSave: (String) -> Unit) {
+    val m = ui.m
+    val b = ui.board
+    var name by remember { mutableStateOf("") }
+    val key = name.trim().lowercase()
+    val booked = b.booked[side]
+    val offKeys = b.sentOff[side].map { it.lowercase() }.toSet()
+    // Other names of this team seen in the match (scorers, substitutions), not booked, not sent off.
+    val known = ui.evs.filter { it.side == side && it.note.isNotBlank() && it.kind != Kind.OWN_GOAL }
+        .flatMap { it.note.split("→").map { n -> n.trim() } }
+        .filter { it.isNotEmpty() && it.lowercase() !in offKeys && booked.none { bk -> bk.equals(it, ignoreCase = true) } }
+        .distinctBy { it.lowercase() }
+    val second = kind == Kind.YELLOW && booked.any { it.lowercase() == key }
+    val already = key.isNotEmpty() && key in offKeys
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("${Kind.icon(kind)}${Kind.title(kind)} · ${m.name(side)}") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(name, { name = it }, singleLine = true, label = { Text("Tên hoặc số áo cầu thủ") },
+                    keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words))
+                if (booked.isNotEmpty()) {
+                    Text(if (kind == Kind.YELLOW) "Đã có 1 thẻ vàng (thẻ này sẽ là thẻ đỏ):" else "Đang có 1 thẻ vàng:",
+                        style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        booked.forEach { n -> FilterChip(key == n.lowercase(), { name = n }, label = { Text("🟨 $n") }) }
+                    }
+                }
+                if (known.isNotEmpty()) {
+                    Text("Cầu thủ đã có trong trận:", style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        known.take(10).forEach { n -> FilterChip(key == n.lowercase(), { name = n }, label = { Text(n) }) }
+                    }
+                }
+                val note = when {
+                    already -> "${name.trim()} đã bị đuổi khỏi sân trước đó."
+                    second -> "⚠ Thẻ vàng thứ 2: ${name.trim()} bị đuổi, ${m.name(side)} còn ${b.onField[side] - 1} người."
+                    kind == Kind.RED -> "${name.trim().ifEmpty { "Cầu thủ" }} bị đuổi, ${m.name(side)} còn ${b.onField[side] - 1} người."
+                    key.isEmpty() -> "Không ghi tên thì app không biết thẻ vàng thứ 2 là của ai."
+                    else -> null
+                }
+                note?.let {
+                    Text(it, style = MaterialTheme.typography.bodySmall,
+                        color = if (second || kind == Kind.RED) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        },
+        confirmButton = { TextButton({ onSave(name.trim()) }) { Text("Ghi thẻ") } },
+        dismissButton = { TextButton(onDismiss) { Text("Thôi") } },
     )
 }
 
