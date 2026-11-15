@@ -1,6 +1,7 @@
 package com.samuelcruz.ghidiem.data
 
 import android.content.Context
+import androidx.room.AutoMigration
 import androidx.room.Dao
 import androidx.room.Database
 import androidx.room.Delete
@@ -8,6 +9,7 @@ import androidx.room.Insert
 import androidx.room.Query
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.room.Transaction
 import androidx.room.Update
 import kotlinx.coroutines.flow.Flow
 
@@ -52,9 +54,67 @@ interface MatchDao {
             "GROUP BY name ORDER BY COUNT(*) DESC, MAX(createdAt) DESC LIMIT 12",
     )
     fun recentNames(): Flow<List<String>>
+
+    @Query("SELECT * FROM matches WHERE finishedAt > 0")
+    fun finished(): Flow<List<MatchRow>>
+
+    @Query("SELECT * FROM matches WHERE tournamentId = :id")
+    fun ofTournament(id: Long): Flow<List<MatchRow>>
+
+    @Query("SELECT * FROM matches WHERE tournamentId = :id AND fixture = :fixture LIMIT 1")
+    suspend fun byFixture(id: Long, fixture: String): MatchRow?
+
+    @Query("SELECT * FROM matches WHERE finishedAt = 0 ORDER BY createdAt DESC LIMIT 1")
+    suspend fun latestLive(): MatchRow?
+
+    @Query("SELECT * FROM matches ORDER BY createdAt DESC LIMIT 1")
+    suspend fun latest(): MatchRow?
+
+    @Query("SELECT * FROM tournaments ORDER BY createdAt DESC")
+    fun tournaments(): Flow<List<TournamentRow>>
+
+    @Query("SELECT * FROM tournaments WHERE id = :id")
+    fun watchTournament(id: Long): Flow<TournamentRow?>
+
+    @Insert
+    suspend fun insert(t: TournamentRow): Long
+
+    @Update
+    suspend fun update(t: TournamentRow)
+
+    @Query("DELETE FROM matches WHERE tournamentId = :id")
+    suspend fun deleteTournamentMatches(id: Long)
+
+    @Query("DELETE FROM tournaments WHERE id = :id")
+    suspend fun deleteTournament(id: Long)
+
+    // Backup: whole tables.
+    @Query("SELECT * FROM matches") suspend fun allMatches(): List<MatchRow>
+    @Query("SELECT * FROM events") suspend fun allEvents(): List<EventRow>
+    @Query("SELECT * FROM tournaments") suspend fun allTournaments(): List<TournamentRow>
+    @Query("DELETE FROM matches") suspend fun clearMatches()
+    @Query("DELETE FROM tournaments") suspend fun clearTournaments()
+    @Insert suspend fun insertMatches(m: List<MatchRow>)
+    @Insert suspend fun insertEvents(e: List<EventRow>)
+    @Insert suspend fun insertTournaments(t: List<TournamentRow>)
+
+    /** Replaces everything (restore / sync download) in one transaction: all or nothing. */
+    @Transaction
+    suspend fun replaceAll(m: List<MatchRow>, e: List<EventRow>, t: List<TournamentRow>) {
+        clearMatches() // events go with their matches (cascade)
+        clearTournaments()
+        insertTournaments(t)
+        insertMatches(m)
+        insertEvents(e)
+    }
 }
 
-@Database(entities = [MatchRow::class, EventRow::class], version = 1)
+// v2: doubles, tournaments. Never destructive: these are real records.
+@Database(
+    entities = [MatchRow::class, EventRow::class, TournamentRow::class],
+    version = 2,
+    autoMigrations = [AutoMigration(from = 1, to = 2)],
+)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun matches(): MatchDao
 

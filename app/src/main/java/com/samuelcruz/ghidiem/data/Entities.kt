@@ -1,5 +1,6 @@
 package com.samuelcruz.ghidiem.data
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.Index
@@ -8,12 +9,14 @@ import com.samuelcruz.ghidiem.core.Ev
 import com.samuelcruz.ghidiem.core.Rules
 import com.samuelcruz.ghidiem.core.Setup
 import com.samuelcruz.ghidiem.core.Sport
+import kotlinx.serialization.Serializable
 
 /**
  * A match. The score is never stored as truth: it is replayed from [EventRow]s ([score]/[detail]/[winner] are a
  * cache for the history list). The clock is a stopwatch: [clockBaseMs] counted so far, plus the time since
  * [runningSince] (wall clock, 0 = paused), so it keeps counting while the app is closed.
  */
+@Serializable
 @Entity(tableName = "matches")
 data class MatchRow(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
@@ -36,10 +39,18 @@ data class MatchRow(
     val winner: Int = -1,
     /** Ended by hand ("Kết thúc" / "Dừng trận"), not by the rules: deleting events must not reopen it. */
     val manualEnd: Boolean = false,
+    /** Two against two: names are "Player 1 / Player 2" and the service order follows the players. */
+    @ColumnInfo(defaultValue = "0") val doubles: Boolean = false,
+    /** Part of a [TournamentRow] (0 = a friendly match), as fixture [fixture] ("rr:0:3", "ko:1:0"). */
+    @ColumnInfo(defaultValue = "0") val tournamentId: Long = 0,
+    @ColumnInfo(defaultValue = "") val fixture: String = "",
 ) {
     val sportEnum get() = Sport.of(sport)
     val rulesObj get() = Rules.fromJson(rules)
-    val setup get() = Setup(sportEnum, rulesObj, firstServer)
+    val setup get() = Setup(sportEnum, rulesObj, firstServer, doubles)
+    /** Players of [side]: two in doubles, else the one name. */
+    fun players(side: Int): List<String> =
+        com.samuelcruz.ghidiem.core.splitPlayers(name(side)).let { if (doubles && it.size == 2) it else listOf(name(side)) }
     val running get() = runningSince > 0
     val finished get() = finishedAt > 0
     fun name(side: Int) = if (side == 0) nameA else nameB
@@ -49,6 +60,7 @@ data class MatchRow(
     fun stopClock(now: Long) = if (!running) this else copy(clockBaseMs = clockAt(now), runningSince = 0)
 }
 
+@Serializable
 @Entity(
     tableName = "events",
     foreignKeys = [ForeignKey(MatchRow::class, ["id"], ["matchId"], onDelete = ForeignKey.CASCADE)],
@@ -69,4 +81,28 @@ data class EventRow(
     val note: String = "",
 ) {
     fun ev() = Ev(side, kind, clockMs, note)
+}
+
+/** A small tournament: entrants (one per line, in seed order) play round-robin or knockout with the same rules. */
+@Serializable
+@Entity(tableName = "tournaments")
+data class TournamentRow(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val name: String,
+    val sport: String,
+    val rules: String,
+    /** [FORMAT_ROUND_ROBIN] or [FORMAT_KNOCKOUT]. */
+    val format: Int,
+    /** Team / player names, one per line ("A / B" for a doubles pair). */
+    val entrants: String,
+    val doubles: Boolean = false,
+    val createdAt: Long,
+) {
+    val sportEnum get() = Sport.of(sport)
+    val names get() = entrants.lines().map { it.trim() }.filter { it.isNotEmpty() }
+
+    companion object {
+        const val FORMAT_ROUND_ROBIN = 0
+        const val FORMAT_KNOCKOUT = 1
+    }
 }

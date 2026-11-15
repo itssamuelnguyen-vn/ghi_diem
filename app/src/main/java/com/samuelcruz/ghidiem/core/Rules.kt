@@ -13,6 +13,18 @@ enum class Sport(val title: String, val emoji: String, val setWord: String) {
     /** Points come one rally at a time and someone serves (everything but football). */
     val hasServe get() = this != FOOTBALL
 
+    /** Can be played two against two with a tracked service order. */
+    val hasDoubles get() = this == BADMINTON || this == TABLE_TENNIS || this == TENNIS
+
+    /** Time-outs a side may call: volleyball 2 per set, table tennis 1 per match, others none. */
+    val timeouts get() = when (this) {
+        VOLLEYBALL -> 2
+        TABLE_TENNIS -> 1
+        else -> 0
+    }
+    val timeoutPerSet get() = this == VOLLEYBALL
+    val timeoutSeconds get() = if (this == VOLLEYBALL) 30 else 60
+
     fun defaultRules(): Rules = when (this) {
         FOOTBALL -> Rules(periodMinutes = 45, periods = 2, extraMinutes = 15)
         BADMINTON -> Rules(bestOf = 3, points = 21, decidingPoints = 21, cap = 30)
@@ -70,15 +82,60 @@ object Kind {
     const val GOAL = 1
     const val YELLOW = 2
     const val RED = 3
+    /** Football: a goal [side] gets from the other team's own goal (note = who put it in). */
+    const val OWN_GOAL = 4
+    /** Volleyball / table tennis time-out called by [side]. */
+    const val TIMEOUT = 5
+    /** Football substitution (note = "out → in"). */
+    const val SUB = 6
+    /** Football penalty shoot-out kick by [side]. */
+    const val PEN_SCORED = 7
+    const val PEN_MISSED = 8
     const val PERIOD_START = 10
     const val PERIOD_END = 11
+    /** Football: the shoot-out begins; [side] kicks first. */
+    const val SHOOTOUT_START = 12
 
-    /** Events the undo button takes back (period changes are not undone). */
-    fun undoable(kind: Int) = kind < PERIOD_START
+    /** Events the undo button takes back (period changes are not undone, a shoot-out start is). */
+    fun undoable(kind: Int) = kind < PERIOD_START || kind == SHOOTOUT_START
+
+    /** Shown as a divider in the timeline, not tied to one side. */
+    fun divider(kind: Int) = kind >= PERIOD_START
+
+    /** Can carry a player name. */
+    fun named(kind: Int) = kind in setOf(GOAL, OWN_GOAL, YELLOW, RED, SUB, PEN_SCORED, PEN_MISSED)
+
+    fun title(kind: Int) = when (kind) {
+        POINT -> "Điểm"
+        GOAL -> "Bàn thắng"
+        OWN_GOAL -> "Phản lưới nhà"
+        YELLOW -> "Thẻ vàng"
+        RED -> "Thẻ đỏ"
+        TIMEOUT -> "Hội ý"
+        SUB -> "Thay người"
+        PEN_SCORED -> "Luân lưu: vào"
+        PEN_MISSED -> "Luân lưu: trượt"
+        else -> ""
+    }
+
+    fun icon(kind: Int) = when (kind) {
+        GOAL -> "⚽ "
+        OWN_GOAL -> "🥅 "
+        YELLOW -> "🟨 "
+        RED -> "🟥 "
+        TIMEOUT -> "⏸ "
+        SUB -> "🔁 "
+        PEN_SCORED -> "✅ "
+        PEN_MISSED -> "❌ "
+        else -> ""
+    }
 }
 
 /** One thing that happened: [side] 0 or 1 (-1 for period events), at [clockMs] on the match clock. */
 data class Ev(val side: Int, val kind: Int, val clockMs: Long, val note: String = "")
+
+/** "Nam / Hùng" → ["Nam", "Hùng"]; a name without "/" is one player. */
+fun splitPlayers(team: String): List<String> = team.split("/").map { it.trim() }.filter { it.isNotEmpty() }
 
 /** "12:34", or "1:02:03" past an hour. */
 fun fmtClock(ms: Long): String {
