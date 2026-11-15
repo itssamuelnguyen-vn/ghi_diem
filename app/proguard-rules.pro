@@ -3,3 +3,6 @@
 
 # Keep line numbers so crash stack traces stay readable.
 -keepattributes SourceFile,LineNumberTable
+
+# Glance creates widget button callbacks by class name.
+-keep class * implements androidx.glance.appwidget.action.ActionCallback { <init>(); }

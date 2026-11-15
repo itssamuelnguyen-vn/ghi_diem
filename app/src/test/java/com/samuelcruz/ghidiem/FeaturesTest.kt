@@ -9,6 +9,7 @@ import com.samuelcruz.ghidiem.core.Setup
 import com.samuelcruz.ghidiem.core.Sport
 import com.samuelcruz.ghidiem.core.Standings
 import com.samuelcruz.ghidiem.core.Stats
+import com.samuelcruz.ghidiem.core.smallScores
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -169,7 +170,7 @@ class FeaturesTest {
         assertEquals(3, r[0][1].a); assertEquals(4, r[0][1].b)
         // Round 2: seed 0 waits for the winner of 3 v 4.
         assertEquals(0, r[1][0].a); assertEquals(-1, r[1][0].b)
-        val played = Fixtures.knockout(5) { key -> if (key == "ko:0:1") 4 else null }
+        val played = Fixtures.knockout(5) { key -> if (key == "ko:0:1") 1 else null } // 4 beat 3
         assertEquals(4, played[1][0].b)
     }
 
@@ -194,5 +195,12 @@ class FeaturesTest {
         assertEquals(1, p["Nam / Hùng"]?.won)
         assertEquals(1, p["Lan"]?.lost)
         assertNull(p["Hùng "])
+    }
+
+    @Test fun smallScoresFromDetail() {
+        assertEquals(60 to 55, smallScores("21-19 · 18-21 · 21-15"))
+        assertEquals(13 to 12, smallScores("7-6(5) · 6-6"))
+        assertEquals(10 to 8, smallScores("[10-8]"))
+        assertEquals(0 to 0, smallScores("Luân lưu 4-3".substringBefore("Luân")))
     }
 }

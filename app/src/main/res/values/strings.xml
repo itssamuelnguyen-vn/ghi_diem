@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Ghi Điểm</string>
+    <string name="widget_name">Tỉ số trận đấu</string>
+    <string name="widget_description">Tỉ số trận đang chơi, cộng điểm ngay trên màn hình chính</string>
 </resources>

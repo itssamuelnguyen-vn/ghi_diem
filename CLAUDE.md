@@ -23,19 +23,29 @@ Release is R8-shrunk and signed with the local debug key. Bump `versionCode` / `
 `app/build.gradle.kts` for each APK given to the phone.
 
 Stack (same versions as the other native apps, see `gradle/libs.versions.toml`): Kotlin, Compose + Material 3
-(+ icons extended), Navigation Compose (string routes), Room (KSP, schemas in `app/schemas`), kotlinx.serialization.
-compile/target SDK 37, minSdk 29. No DI: `GhiDiemApp` holds `db`, `repo`. No ViewModels: screens read Room Flows
-with `collectAsState` and write through `app.repo`.
+(+ icons extended), Navigation Compose (string routes), Room (KSP, schemas in `app/schemas`), kotlinx.serialization,
+WorkManager (Drive sync), Glance (widget), Play services auth (Drive, `drive.appdata` only; Drive REST is plain
+HttpURLConnection copied from so_no). compile/target SDK 37, minSdk 29. No DI: `GhiDiemApp` holds `db`, `prefs`,
+`repo`, `speaker`, `sounds`. No ViewModels: screens read Room Flows with `collectAsState` and write through
+`app.repo` (every write calls `GhiDiemApp.changed`: widget refresh + Drive upload 20 s later).
 
 ## Layout
 
 ```
-GhiDiemApp    wiring: db, repo, app scope
-core/   Rules (Sport, Rules JSON, Kind, Ev, time formats), Scoring (replay events → Board: Rally for badminton /
-        volleyball / table tennis, Tennis, Football + FootballClock)
-data/   Entities (MatchRow, EventRow), AppDatabase (+ MatchDao), Repo (all writes, clock, re-replay after each change)
-ui/     Theme (+ Team colours), AppNav, HomeScreen (sports + live + history), NewMatchScreen (names, rules per sport,
-        first server), MatchScreen (clock, banner, two tap panels, controls, timeline, dialogs, share)
+GhiDiemApp    wiring: db, prefs, repo, speaker, sounds, volumeHandler, changed() → widget + syncSoon()
+MainActivity  volume keys → app.volumeHandler, widget intent (EXTRA_MATCH) → AppNav opens that match, sync on start
+Feedback      Speaker (text-to-speech, Vietnamese if installed), Sounds (whistle, buzz)
+core/   Rules (Sport, Rules JSON, Kind, Ev, splitPlayers, time formats), Scoring (replay events → Board: Rally for
+        badminton / volleyball / table tennis, Tennis, Football + FootballClock; Turns = doubles service order),
+        Stats (match stats + charts, Result / Record / Standings, Fixtures: round-robin and knockout, smallScores)
+data/   Entities (MatchRow, EventRow, TournamentRow), AppDatabase v2 (+ MatchDao), Repo (all writes), Results
+        (MatchRow → Result), Prefs, Backup (+ Snapshot JSON, SnapshotFiles safety copies)
+sync/   Drive + GoogleAuth (copied from so_no), SnapshotSync (`ghidiem-data.json` in appDataFolder) + SyncWorker
+widget/ ScoreWidget (live score, +1 buttons via ScoreAction)
+ui/     Theme (+ Team colours), AppNav, HomeScreen, NewMatchScreen (+ RulesForm, shared with tournaments),
+        MatchCommon (MatchUi/rememberMatch, MatchFeedback: keep awake, voice, whistles, volume keys; Panel, clock
+        and result texts), MatchScreen, BoardScreen (full-screen landscape), StatsScreen (bars + charts), Share
+        (text + 1080×1350 image card via FileProvider), TournamentScreens, PlayersScreen, SettingsScreen (+ sync)
 ```
 
 ## How scoring works
@@ -63,12 +73,32 @@ ui/     Theme (+ Team colours), AppNav, HomeScreen (sports + live + history), Ne
 - **Football**: goals and yellow / red cards, periods started and ended by hand (first goal opens period 1). The
   clock shows the match minute (second half starts at 45:00 even if the first ran long) and stoppage time in amber;
   event minutes are written like a referee does: 23', 45+2'. Two optional extra-time periods. Ended by hand.
+- **Doubles**: names are "Player 1 / Player 2" (`splitPlayers`), `MatchRow.doubles` turns tracking on. Badminton
+  follows courts: the serving pair swaps after winning a rally on its serve, the server is the player in the court
+  of the server's score (even = right), the receiver stands diagonally. Table tennis and tennis use service turns
+  (A1, B1, A2, B2): a new turn at each change of server (table tennis), each game and each tie-break change
+  (tennis). Tennis receivers keep courts: player 1 right (deuce), player 2 left.
+- **Time-outs**: volleyball 2 per set (30 s), table tennis 1 per match (60 s); a countdown banner and a whistle.
+- **Football extras**: own goal (event `side` = the team credited, note = who put it in), substitution (note
+  "out → in"), shoot-out (`SHOOTOUT_START` side = first kicker; 5 each then sudden death, decided as soon as one
+  side cannot catch up; a decided shoot-out finishes the match like a won rally match does, undo reopens it).
+- **Tournaments**: entrants one per line, line order = seeds. Round-robin fixtures "rr:i:j" (circle method),
+  standings by points (football 3/1/0, else wins), then set / goal difference, then points. Knockout "ko:round:slot"
+  with standard seeding and byes; a fixture's winner comes from its match (`winner` side); draws do not advance.
+  Matches are created on first tap of a fixture (`Repo.fixtureMatch`) and linked by `tournamentId` + `fixture`.
+- **Sync / backup**: one JSON snapshot of all tables (`Backup`), same Drive design as so_no (upload / download /
+  conflict → user picks; the losing side kept in SnapshotFiles).
 - Schema changes: bump the `@Database` version and add a migration (AutoMigration when possible). Never destructive
   migrations: these are real records.
 
 ## Roadmap
 
+Done 0.2.0 (2026-11-15, DB v2 AutoMigration): doubles service order, volleyball / table tennis time-outs, football
+own goals / substitutions / penalty shoot-out, match statistics + charts, player records + head-to-head,
+tournaments (round-robin, knockout), voice, whistles, volume keys, full-screen board, image share, backup file,
+Google Drive sync, home-screen widget with +1 buttons.
+
 Done 0.1.0 (2026-11-15): five sports, rules per match, clock, timeline with times, undo / delete / note per event,
 callouts and change-ends alerts, swap sides, rematch, history with filter, share as text.
-Ideas not built (ask first): penalty shoot-out, timeouts (volleyball), doubles service order / positions,
-statistics per player, backup / Drive sync, home-screen widget, landscape full-screen scoreboard for spectators.
+Ideas not built (ask first): more sports (owner said five are enough), editing a tournament's entrants after
+creation, choosing who serves first inside a doubles pair.

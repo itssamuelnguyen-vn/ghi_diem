@@ -94,25 +94,34 @@ fun MatchFeedback(ui: MatchUi, onSide: (Int) -> Unit) {
     val app = app()
     val view = LocalView.current
     val done = ui.done
+    // Counted, because the match screen and the full-screen board overlap while one replaces the other.
     DisposableEffect(done) {
-        view.keepScreenOn = !done
-        onDispose { view.keepScreenOn = false }
+        if (!done) keepOnCount++
+        view.keepScreenOn = keepOnCount > 0
+        onDispose {
+            if (!done) keepOnCount--
+            view.keepScreenOn = keepOnCount > 0
+        }
     }
 
     // Volume up = left side, volume down = right side (as the phone is held facing the court).
     val order by rememberUpdatedState(ui.order)
     val side by rememberUpdatedState(onSide)
     DisposableEffect(done) {
-        app.volumeHandler = if (done) null else { up -> side(if (up) order[0] else order[1]) }
-        onDispose { app.volumeHandler = null }
+        val mine: ((Boolean) -> Unit)? = if (done) null else { up -> side(if (up) order[0] else order[1]) }
+        if (mine != null) app.volumeHandler = mine
+        // Only clear it if it is still ours (the next screen may have set its own already).
+        onDispose { if (mine != null && app.volumeHandler === mine) app.volumeHandler = null }
     }
 
     // Speak only events added while the screen is open, not the ones already there when it opened.
     var spokenId by rememberSaveable { mutableLongStateOf(-1L) }
     LaunchedEffect(ui.lastId) {
-        if (spokenId >= 0 && ui.lastId > spokenId && app.prefs.voice) {
+        val last = ui.evs.lastOrNull()
+        // Recent only: coming back to the screen must not repeat a point scored elsewhere a while ago.
+        if (spokenId >= 0 && ui.lastId > spokenId && app.prefs.voice && last != null && System.currentTimeMillis() - last.at < 5_000) {
             val i = ui.evs.lastIndex
-            ui.board.lines.getOrNull(i)?.let { app.speaker.speak(announce(ui, ui.evs[i], it)) }
+            ui.board.lines.getOrNull(i)?.let { app.speaker.speak(announce(ui, last, it)) }
         }
         spokenId = ui.lastId
     }
@@ -144,6 +153,9 @@ fun MatchFeedback(ui: MatchUi, onSide: (Int) -> Unit) {
         }
     }
 }
+
+/** Open screens that want the screen kept on (main thread only). */
+private var keepOnCount = 0
 
 /** What the voice says after an event, server's score first like an umpire. */
 fun announce(ui: MatchUi, e: EventRow, line: Line): String {

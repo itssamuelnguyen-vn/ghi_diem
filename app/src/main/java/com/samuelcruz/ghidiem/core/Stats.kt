@@ -181,6 +181,13 @@ object Standings {
 
 /** Round-robin and knockout fixtures. Entrants are numbered 0..n-1 in the order they were typed (seeds). */
 object Fixtures {
+    /** "rr:2:5" → (2, 5); null for other keys. */
+    fun roundRobinPair(key: String): Pair<Int, Int>? {
+        val p = key.split(":")
+        if (p.size != 3 || p[0] != "rr") return null
+        return (p[1].toIntOrNull() ?: return null) to (p[2].toIntOrNull() ?: return null)
+    }
+
     /** A fixture's key: round-robin "rr:i:j", knockout "ko:round:slot". */
     data class Fixture(val key: String, val round: Int, val a: Int, val b: Int)
 
@@ -217,10 +224,10 @@ object Fixtures {
     }
 
     /**
-     * The knockout bracket from the results known so far: [winnerOf] gives the winning entrant of a fixture
-     * key (null = not played / no winner yet). Returns all rounds; an unknown entrant is -1, a bye is -2.
+     * The knockout bracket from the results known so far: [winnerSide] gives the winning side (0 = a, 1 = b) of a
+     * fixture key (null = not played / no winner yet). Returns all rounds; an unknown entrant is -1, a bye is -2.
      */
-    fun knockout(n: Int, winnerOf: (String) -> Int?): List<List<Fixture>> {
+    fun knockout(n: Int, winnerSide: (String) -> Int?): List<List<Fixture>> {
         val rounds = rounds(n)
         if (rounds == 0) return emptyList()
         val size = 1 shl rounds
@@ -238,7 +245,11 @@ object Fixtures {
                     f.b == -2 -> f.a
                     f.a == -2 -> f.b
                     f.a < 0 || f.b < 0 -> -1
-                    else -> winnerOf(f.key) ?: -1
+                    else -> when (winnerSide(f.key)) {
+                        0 -> f.a
+                        1 -> f.b
+                        else -> -1
+                    }
                 }
             }
         }
@@ -254,4 +265,20 @@ object Fixtures {
         }
         return order
     }
+}
+
+/** Sums the set scores of a detail line ("21-19 · 18-21", "7-6(5) · [10-8]") → (A, B); 0-0 for anything else. */
+fun smallScores(detail: String): Pair<Int, Int> {
+    var a = 0
+    var b = 0
+    detail.split("·").forEach { token ->
+        val t = token.trim().removePrefix("[").substringBefore("(").removeSuffix("]")
+        val p = t.split("-")
+        if (p.size == 2) {
+            val x = p[0].trim().toIntOrNull()
+            val y = p[1].trim().toIntOrNull()
+            if (x != null && y != null) { a += x; b += y }
+        }
+    }
+    return a to b
 }

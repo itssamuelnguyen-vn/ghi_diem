@@ -59,7 +59,13 @@ import java.util.Date
 import java.util.Locale
 
 @Composable
-fun HomeScreen(onNew: (Sport) -> Unit, onOpen: (Long) -> Unit) {
+fun HomeScreen(
+    onNew: (Sport) -> Unit,
+    onOpen: (Long) -> Unit,
+    onTournaments: () -> Unit,
+    onPlayers: () -> Unit,
+    onSettings: () -> Unit,
+) {
     val app = app()
     val matches by app.db.matches().all().collectAsState(initial = null)
     var filter by rememberSaveable { mutableStateOf<String?>(null) }
@@ -74,6 +80,11 @@ fun HomeScreen(onNew: (Sport) -> Unit, onOpen: (Long) -> Unit) {
         onDispose { if (old != null) bars.isAppearanceLightStatusBars = old }
     }
 
+    val context = androidx.compose.ui.platform.LocalContext.current
+    androidx.compose.runtime.LaunchedEffect(Unit) {
+        app.messages.collect { android.widget.Toast.makeText(context, it, android.widget.Toast.LENGTH_SHORT).show() }
+    }
+
     val live = matches.orEmpty().filter { !it.finished }
     val done = matches.orEmpty().filter { it.finished && (filter == null || it.sport == filter) }
 
@@ -81,7 +92,7 @@ fun HomeScreen(onNew: (Sport) -> Unit, onOpen: (Long) -> Unit) {
         Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background),
         contentPadding = PaddingValues(bottom = 24.dp),
     ) {
-        item { Hero(onNew) }
+        item { Hero(onNew, onTournaments, onPlayers, onSettings) }
         if (live.isNotEmpty()) {
             item { SectionTitle("Đang diễn ra") }
             items(live, key = { it.id }) { MatchCard(it, onClick = { onOpen(it.id) }, onLongClick = { deleting = it }) }
@@ -127,7 +138,7 @@ fun HomeScreen(onNew: (Sport) -> Unit, onOpen: (Long) -> Unit) {
 }
 
 @Composable
-private fun Hero(onNew: (Sport) -> Unit) {
+private fun Hero(onNew: (Sport) -> Unit, onTournaments: () -> Unit, onPlayers: () -> Unit, onSettings: () -> Unit) {
     Column(
         Modifier
             .fillMaxWidth()
@@ -160,6 +171,26 @@ private fun Hero(onNew: (Sport) -> Unit) {
                 }
             }
         }
+        Spacer(Modifier.height(14.dp))
+        Row(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            HeroAction("🏆", "Giải đấu", Modifier.weight(1f), onTournaments)
+            HeroAction("📊", "Người chơi", Modifier.weight(1f), onPlayers)
+            HeroAction("⚙️", "Cài đặt", Modifier.weight(1f), onSettings)
+        }
+    }
+}
+
+@Composable
+private fun HeroAction(icon: String, label: String, modifier: Modifier, onClick: () -> Unit) {
+    Row(
+        modifier.clip(RoundedCornerShape(14.dp)).background(Color.White.copy(alpha = 0.14f)).clickable(onClick = onClick)
+            .padding(vertical = 10.dp),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(icon, fontSize = 16.sp)
+        Spacer(Modifier.width(6.dp))
+        Text(label, color = Color.White, style = MaterialTheme.typography.labelLarge, maxLines = 1)
     }
 }
 
@@ -195,6 +226,7 @@ private fun MatchCard(m: MatchRow, onClick: () -> Unit, onLongClick: () -> Unit)
                 val sub = buildList {
                     if (m.detail.isNotEmpty()) add(m.detail)
                     if (m.doubles) add("đôi")
+                    if (m.tournamentId > 0) add("🏆 giải")
                     if (!m.finished) add("Đang chơi") else {
                         if (m.clockBaseMs > 60_000) add(fmtDuration(m.clockBaseMs))
                     }

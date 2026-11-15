@@ -369,7 +369,7 @@ private fun Banner(
         }
         timeoutEnd != null && now < timeoutEnd -> BannerBox(SolidColor(MaterialTheme.colorScheme.primaryContainer)) {
             val left = ((timeoutEnd - now + 999) / 1000).toInt()
-            Text("⏸  Hội ý · ${m.name(last?.side ?: 0)}", Modifier.weight(1f).padding(vertical = 10.dp),
+            Text("⏸  Hội ý · ${m.name(last.side)}", Modifier.weight(1f).padding(vertical = 10.dp),
                 style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onPrimaryContainer)
             Text("0:%02d".format(left), Modifier.padding(end = 12.dp), style = MaterialTheme.typography.titleLarge,
                 color = MaterialTheme.colorScheme.onPrimaryContainer)

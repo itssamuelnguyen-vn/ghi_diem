@@ -53,13 +53,14 @@ fun BoardScreen(id: Long, onBack: () -> Unit) {
         val activity = view.context as? Activity
         val window = activity?.window
         val bars = window?.let { WindowCompat.getInsetsController(it, view) }
-        val oldOrientation = activity?.requestedOrientation
         activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
         bars?.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
         bars?.hide(WindowInsetsCompat.Type.systemBars())
         onDispose {
             bars?.show(WindowInsetsCompat.Type.systemBars())
-            if (oldOrientation != null) activity.requestedOrientation = oldOrientation
+            // Back to "follow the phone" (the app never locks it otherwise). Not the value read at start: the
+            // rotation recreates the activity, so that would already be landscape.
+            activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
         }
     }
     val ui = rememberMatch(id)
