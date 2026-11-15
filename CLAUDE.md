@@ -97,6 +97,8 @@ Done 0.2.0 (2026-11-15, DB v2 AutoMigration): doubles service order, volleyball 
 own goals / substitutions / penalty shoot-out, match statistics + charts, player records + head-to-head,
 tournaments (round-robin, knockout), voice, whistles, volume keys, full-screen board, image share, backup file,
 Google Drive sync, home-screen widget with +1 buttons.
+Done 0.2.1 (2026-11-15): second review fixes (fixture double tap, stale knockout names, stopped rally matches
+no longer counted as draws, missing-match screen, build script works with redirected output).
 
 Done 0.1.0 (2026-11-15): five sports, rules per match, clock, timeline with times, undo / delete / note per event,
 callouts and change-ends alerts, swap sides, rematch, history with filter, share as text.

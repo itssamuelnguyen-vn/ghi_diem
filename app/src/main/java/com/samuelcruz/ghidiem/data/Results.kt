@@ -4,6 +4,9 @@ import com.samuelcruz.ghidiem.core.Result
 import com.samuelcruz.ghidiem.core.Sport
 import com.samuelcruz.ghidiem.core.smallScores
 
+/** Finished with a result that counts: a winner, or a football draw (a rally match stopped early does not count). */
+val MatchRow.decided get() = finished && (winner >= 0 || sportEnum == Sport.FOOTBALL)
+
 /** A finished match as standings / player records count it; [nameA]/[nameB] can be replaced (tournament entrants). */
 fun MatchRow.result(nameA: String = this.nameA, nameB: String = this.nameB): Result {
     val (x, y) = score.split("-").map { it.trim().toIntOrNull() ?: 0 }.let { (it.getOrNull(0) ?: 0) to (it.getOrNull(1) ?: 0) }

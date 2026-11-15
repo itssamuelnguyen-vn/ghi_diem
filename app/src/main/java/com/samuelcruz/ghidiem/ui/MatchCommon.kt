@@ -30,6 +30,14 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -86,6 +94,21 @@ fun rememberMatch(id: Long): MatchUi? {
     if (m == null || evs == null) return null
     val board = remember(m.sport, m.rules, m.firstServer, m.doubles, evs) { Scoring.replay(m.setup, evs.map { it.ev() }) }
     return MatchUi(m, evs, board, m.clockAt(now))
+}
+
+/** Loading, or the match no longer exists: a back button, and a line once loading clearly is not the reason. */
+@Composable
+fun MissingMatch(onBack: () -> Unit) {
+    var late by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        delay(800)
+        late = true
+    }
+    Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).windowInsetsPadding(WindowInsets.statusBars)) {
+        IconButton(onBack, Modifier.padding(4.dp)) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Quay lại") }
+        if (late) Text("Không tìm thấy trận này (có thể đã bị xoá).", Modifier.align(Alignment.Center).padding(24.dp),
+            color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
+    }
 }
 
 /** Keeps the screen on, speaks / beeps after events, and takes volume keys while the match is played. */

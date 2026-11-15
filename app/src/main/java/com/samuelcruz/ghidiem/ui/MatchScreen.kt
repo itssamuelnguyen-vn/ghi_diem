@@ -103,7 +103,7 @@ fun MatchScreen(
     val app = app()
     val ui = rememberMatch(id)
     if (ui == null) {
-        Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background))
+        MissingMatch(onBack)
         return
     }
     val m = ui.m

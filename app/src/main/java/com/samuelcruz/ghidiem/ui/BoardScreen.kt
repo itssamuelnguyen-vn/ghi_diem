@@ -65,7 +65,10 @@ fun BoardScreen(id: Long, onBack: () -> Unit) {
     }
     val ui = rememberMatch(id)
     Box(Modifier.fillMaxSize().background(Color(0xFF07080D))) {
-        if (ui == null) return@Box
+        if (ui == null) {
+            MissingMatch(onBack)
+            return@Box
+        }
         fun tap(side: Int) {
             scope.launch {
                 app.tapScore(ui.m, side, if (ui.sport == Sport.FOOTBALL) Kind.GOAL else Kind.POINT,

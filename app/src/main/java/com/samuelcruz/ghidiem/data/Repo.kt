@@ -187,10 +187,24 @@ class Repo(private val dao: MatchDao, private val onChange: () -> Unit = {}) {
         onChange()
     }
 
-    /** The match of a fixture: the existing one, or a new one with the tournament's rules. */
-    suspend fun fixtureMatch(t: TournamentRow, fixture: String, a: String, b: String): Long =
-        dao.byFixture(t.id, fixture)?.id
-            ?: create(t.sportEnum, Rules.fromJson(t.rules), a, b, 0, t.doubles, t.id, fixture)
+    /**
+     * The match of a fixture: the existing one, or a new one with the tournament's rules. Under the lock, so two
+     * quick taps cannot create two matches. A knockout match not started yet takes the current names (an earlier
+     * result may have changed who goes through).
+     */
+    suspend fun fixtureMatch(t: TournamentRow, fixture: String, a: String, b: String): Long = lock.withLock {
+        val existing = dao.byFixture(t.id, fixture)
+        if (existing != null) {
+            if (existing.startedAt == 0L && (existing.nameA != a || existing.nameB != b)) {
+                dao.update(existing.copy(nameA = a, nameB = b))
+            }
+            return@withLock existing.id
+        }
+        dao.insert(
+            MatchRow(sport = t.sport, rules = t.rules, nameA = a, nameB = b, firstServer = 0, createdAt = now(),
+                doubles = t.doubles, tournamentId = t.id, fixture = fixture),
+        ).also { onChange() }
+    }
 
     /** Replays the events of [m] (already holding the new clock) and saves the cached score and finish. */
     private suspend fun refresh(m: MatchRow) {

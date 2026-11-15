@@ -50,6 +50,7 @@ import com.samuelcruz.ghidiem.core.Result
 import com.samuelcruz.ghidiem.core.Sport
 import com.samuelcruz.ghidiem.core.Standings
 import com.samuelcruz.ghidiem.core.splitPlayers
+import com.samuelcruz.ghidiem.data.decided
 import com.samuelcruz.ghidiem.data.result
 
 /** Every name that played: matches, wins, win rate; tap one to see who they beat and lost to. */
@@ -61,7 +62,7 @@ fun PlayersScreen(onBack: () -> Unit) {
     var sport by rememberSaveable { mutableStateOf<String?>(null) }
     var open by rememberSaveable { mutableStateOf<String?>(null) }
     val results = remember(finished, sport) {
-        finished.filter { sport == null || it.sport == sport }.map { it.result() }
+        finished.filter { it.decided && (sport == null || it.sport == sport) }.map { it.result() }
     }
     val players = remember(results) { Standings.players(results) }
     val sports = finished.map { it.sport }.distinct()

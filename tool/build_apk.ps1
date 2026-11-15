@@ -7,8 +7,12 @@ $env:JAVA_HOME = 'D:\dev\android-sdk\jbr'
 $version = (Select-String -Path app\build.gradle.kts -Pattern 'versionName\s*=\s*"([^"]+)"').Matches[0].Groups[1].Value
 $stamp = Get-Date -Format 'yyyyMMdd-HHmm'
 
+# Java prints warnings on stderr; with 'Stop', PowerShell would treat them as errors when output is redirected.
+$ErrorActionPreference = 'Continue'
 .\gradlew.bat assembleRelease
-if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+$code = $LASTEXITCODE
+$ErrorActionPreference = 'Stop'
+if ($code -ne 0) { exit $code }
 
 $out = 'build\apk'
 New-Item -ItemType Directory -Force -Path $out | Out-Null

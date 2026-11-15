@@ -74,6 +74,7 @@ import com.samuelcruz.ghidiem.core.Sport
 import com.samuelcruz.ghidiem.core.Standings
 import com.samuelcruz.ghidiem.data.MatchRow
 import com.samuelcruz.ghidiem.data.TournamentRow
+import com.samuelcruz.ghidiem.data.decided
 import com.samuelcruz.ghidiem.data.result
 import kotlinx.coroutines.launch
 
@@ -250,7 +251,7 @@ fun TournamentScreen(id: Long, onBack: () -> Unit, onMatch: (Long) -> Unit) {
                 Tab(tab == 1, { tab = 1 }, text = { Text("Lịch đấu") })
             }
             val fixtures = remember(names.size) { Fixtures.roundRobin(names.size) }
-            val results = matches.filter { it.finished }.mapNotNull { m ->
+            val results = matches.filter { it.decided }.mapNotNull { m ->
                 val (a, b) = Fixtures.roundRobinPair(m.fixture) ?: return@mapNotNull null
                 m.result(names.getOrNull(a) ?: return@mapNotNull null, names.getOrNull(b) ?: return@mapNotNull null)
             }
